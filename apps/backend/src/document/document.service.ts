@@ -132,10 +132,17 @@ export class DocumentService {
       .indexDocument(kbId, docId, content, names, taskId, stepOffset)
       .catch(async (err) => {
         const reason = err instanceof Error ? err.message : String(err);
-        this.logger.error(`文档 ${docId} 向量索引失败，已回滚文档记录`, err);
-        await this.discardUnindexedDocument(docId);
-        // 包成 HttpException，让 HTTP 层也返回真实原因 ——
-        // 否则全局过滤器只给出笼统的“服务器内部错误”，前端无从判断
+        this.logger.error(`文档 ${docId} 索引失败：${reason}`, err);
+        // 不删文档行：清掉可能已写入的向量/chunk，把文档标记为 FAILED 并写入 error_message，
+        // 让前端列表能看到这份失败文档（带错误原因），用户可重试或删除 ——
+        // 之前直接删行会导致前端只收到 500、列表里什么都看不到，无从排查。
+        try { await ragService.deleteByDocumentId(docId); } catch { /* 多半没写入过 */ }
+        await this.prisma.knowledgeChunk.deleteMany({ where: { documentId: docId } });
+        await this.prisma.knowledgeDocument.update({
+          where: { id: docId },
+          data: { status: CommonStatus.FAILED, errorMessage: reason, chunkCount: 0 },
+        });
+        // HTTP 层仍返回 500 + 真实原因（同步响应），同时文档已在库里标记 FAILED（异步可见）
         throw new InternalServerErrorException(`文档索引失败：${reason}`);
       });
 

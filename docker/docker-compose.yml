@@ -1,7 +1,5 @@
 services:
   postgres:
-    # 必须使用带 pgvector 的镜像：官方 postgres:17 不含 vector 扩展，
-    # 会导致 PGVectorStore 初始化报 'extension "vector" is not available'
     image: pgvector/pgvector:pg17
     container_name: langchain-rag-postgres
     environment:
@@ -17,6 +15,54 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: apps/backend/Dockerfile
+    container_name: langchain-rag-backend
+    environment:
+      DATABASE_URL: postgresql://root:chenjiang@postgres:5432/langchain_rag
+      NODE_ENV: production
+      PORT: 3001
+      # 其余配置从 .env 注入（或在部署平台配 secret）
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS}
+      UNSTRUCTURED_API_KEY: ${UNSTRUCTURED_API_KEY}
+      BAIDU_OCR_API_KEY: ${BAIDU_OCR_API_KEY}
+      BAIDU_OCR_SECRET_KEY: ${BAIDU_OCR_SECRET_KEY}
+      IMAGE_VLM_PROVIDER: ${IMAGE_VLM_PROVIDER}
+      IMAGE_VLM_API_KEY: ${IMAGE_VLM_API_KEY}
+      IMAGE_VLM_MODEL: ${IMAGE_VLM_MODEL}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        # 容器内后端地址是服务名 backend，不是 localhost（rewrites 在 build 时写死）
+        BACKEND_URL: http://backend:3001
+    container_name: langchain-rag-frontend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   pgdata:

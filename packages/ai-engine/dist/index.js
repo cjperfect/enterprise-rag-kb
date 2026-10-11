@@ -159,26 +159,46 @@ var ArkMultimodalEmbeddings = class {
       dimensions: this.dimensions,
       input: [{ type: "text", text }]
     };
-    const res = await fetch(`${this.apiUrl}/embeddings/multimodal`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(3e4)
-    });
-    if (!res.ok) {
-      throw new Error(
-        `\u8C46\u5305 embedding \u8BF7\u6C42\u5931\u8D25\uFF1AHTTP ${res.status} ${(await res.text()).slice(0, 200)}`
-      );
+    const MAX_RETRY = 3;
+    let lastErr;
+    for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+      try {
+        const res = await fetch(`${this.apiUrl}/embeddings/multimodal`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(3e4)
+        });
+        if (!res.ok) {
+          const status = res.status;
+          const detail = (await res.text()).slice(0, 200);
+          if (status !== 429 && status < 500) {
+            throw new Error(`\u8C46\u5305 embedding \u8BF7\u6C42\u5931\u8D25\uFF1AHTTP ${status} ${detail}`);
+          }
+          throw new Error(`\u8C46\u5305 embedding \u4E34\u65F6\u5931\u8D25\uFF1AHTTP ${status} ${detail}`);
+        }
+        const data = await res.json();
+        const item = Array.isArray(data.data) ? data.data[0] : data.data;
+        const vector = item?.embedding ?? [];
+        if (vector.length !== this.dimensions) {
+          throw new Error(
+            `\u8C46\u5305 embedding \u7EF4\u5EA6\u5F02\u5E38\uFF1A\u671F\u671B ${this.dimensions}\uFF0C\u5B9E\u9645 ${vector.length}`
+          );
+        }
+        return vector;
+      } catch (err) {
+        lastErr = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        const retriable = msg.includes("\u4E34\u65F6\u5931\u8D25") || msg.includes("429") || msg.includes("500") || msg.includes("502") || msg.includes("503") || msg.includes("504") || msg.includes("timeout") || msg.includes("fetch") || msg.includes("network");
+        if (attempt < MAX_RETRY && retriable) {
+          const waitMs = 500 * Math.pow(2, attempt);
+          await new Promise((r) => setTimeout(r, waitMs));
+          continue;
+        }
+        throw err;
+      }
     }
-    const data = await res.json();
-    const item = Array.isArray(data.data) ? data.data[0] : data.data;
-    const vector = item?.embedding ?? [];
-    if (vector.length !== this.dimensions) {
-      throw new Error(
-        `\u8C46\u5305 embedding \u7EF4\u5EA6\u5F02\u5E38\uFF1A\u671F\u671B ${this.dimensions}\uFF0C\u5B9E\u9645 ${vector.length}`
-      );
-    }
-    return vector;
+    throw lastErr;
   }
 };
 function EMBEDDING_API_URL() {
@@ -442,6 +462,50 @@ var LexicalIndexService = class {
   }
 };
 var lexicalIndex = new LexicalIndexService();
+
+// src/rag/query-rewrite.ts
+var QUERY_REWRITE_ENABLED = (process.env.QUERY_REWRITE_ENABLED ?? "false").trim().toLowerCase() === "true";
+var TIMEOUT_MS = Number(process.env.QUERY_REWRITE_TIMEOUT_MS ?? "3000");
+var REWRITE_PROMPT = `\u4F60\u662F\u68C0\u7D22\u67E5\u8BE2\u4F18\u5316\u52A9\u624B\u3002\u628A\u7528\u6237\u95EE\u9898\u6539\u5199\u6210\u66F4\u9002\u5408\u5728\u4EA7\u54C1\u8BF4\u660E\u4E66\u77E5\u8BC6\u5E93\u4E2D\u68C0\u7D22\u7684\u5F62\u5F0F\u3002
+
+\u8981\u6C42\uFF1A
+1. \u63D0\u53D6\u6838\u5FC3\u5B9E\u4F53\u3001\u578B\u53F7\u3001\u53C2\u6570\uFF08\u5982 N6 mini\u3001\u7535\u6C60\u3001\u5145\u7535\uFF09
+2. \u8865\u5145\u540C\u4E49\u8BCD\u548C\u4E66\u9762\u8868\u8FBE\uFF08\u53E3\u8BED \u2192 \u4E66\u9762\uFF09
+3. \u53BB\u6389\u8BED\u6C14\u8BCD\u3001\u5BA2\u5957\u8BDD\u3001\u7591\u95EE\u52A9\u8BCD
+4. \u4FDD\u6301\u539F\u610F\uFF0C\u4E0D\u8981\u65B0\u589E\u95EE\u9898\u91CC\u6CA1\u6709\u7684\u4FE1\u606F
+5. \u53EA\u8F93\u51FA\u6539\u5199\u540E\u7684\u67E5\u8BE2\u672C\u8EAB\uFF0C\u4E0D\u8981\u89E3\u91CA\uFF0C\u4E0D\u8981\u5F15\u53F7
+
+\u4F8B\u5B50\uFF1A
+\u7528\u6237\uFF1A"\u8FD9\u4E2A\u68B3\u5B50\u5145\u4E00\u6B21\u7535\u80FD\u7528\u591A\u4E45\u554A"
+\u6539\u5199\uFF1A"N6 mini \u5145\u7535\u65F6\u95F4 \u7EED\u822A \u4E00\u6B21\u5145\u7535\u4F7F\u7528\u65F6\u957F"
+
+\u7528\u6237\uFF1A"\u7EA2\u706F\u4E00\u76F4\u95EA\u662F\u600E\u4E48\u56DE\u4E8B"
+\u6539\u5199\uFF1A"\u5145\u7535\u6307\u793A\u706F \u7EA2\u8272\u95EA\u70C1 \u6545\u969C \u5F02\u5E38\u72B6\u6001"
+
+\u7528\u6237\u95EE\u9898\uFF1A`;
+async function rewriteQuery(original) {
+  if (!QUERY_REWRITE_ENABLED) return { rewritten: original, used: false };
+  if (original.trim().length < 6) return { rewritten: original, used: false };
+  try {
+    const model = defaultModel.bind({ maxTokens: 60, temperature: 0 });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const res = await model.invoke(`${REWRITE_PROMPT}${original}`, {
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    const text = (res.content?.toString() ?? "").trim().replace(/^["'"]|["'"]$/g, "").trim();
+    if (!text || text === original || text.length > 200) {
+      return { rewritten: original, used: false };
+    }
+    return { rewritten: text, used: true };
+  } catch (err) {
+    console.warn(
+      `[query-rewrite] \u6539\u5199\u5931\u8D25\uFF1A${err instanceof Error ? err.message : String(err)}\uFF0Cfallback \u539F query`
+    );
+    return { rewritten: original, used: false };
+  }
+}
 
 // src/loaders/pdf/loader.ts
 import { readFileSync } from "fs";
@@ -1314,9 +1378,11 @@ var RagService = class {
     const fetchK = Math.max(k * 2, 10);
     return withTaskEvents("rag_search" /* RAG_SEARCH */, { kbIds, message: `\u68C0\u7D22\uFF1A${query.slice(0, 50)}` }, async () => {
       await this.getStore();
+      const { rewritten } = await rewriteQuery(query);
+      const searchQuery = rewritten;
       const lists = [];
-      if (mode !== "keyword") lists.push(await this.semanticSearch(query, kbIds, fetchK));
-      if (mode !== "semantic") lists.push(await lexicalIndex.search(query, { kbIds, k: fetchK }));
+      if (mode !== "keyword") lists.push(await this.semanticSearch(searchQuery, kbIds, fetchK));
+      if (mode !== "semantic") lists.push(await lexicalIndex.search(searchQuery, { kbIds, k: fetchK }));
       if (mode !== "hybrid") return lists[0].slice(0, k);
       return fuseRrf(lists, k);
     });
@@ -1438,11 +1504,11 @@ async function splitTextToChunks(text, options) {
   return splitTextInternal(text);
 }
 async function splitTextInternal(text) {
+  const chunkSize = Number(process.env.CHUNK_SIZE) || 350;
+  const chunkOverlap = Number(process.env.CHUNK_OVERLAP) || 40;
   const splitter = new RecursiveCharacterTextSplitter({
-    // 中文场景 500 字符 ≈ 250 token 偏大，检索命中粒度粗；
-    // 350 字符 ≈ 175 token，更适合 QA 式问答，切片数略增但向量化成本可接受
-    chunkSize: 350,
-    chunkOverlap: 40,
+    chunkSize,
+    chunkOverlap,
     separators: ["\n\n", "\n", "\u3002", "\uFF01", "\uFF1F", "\uFF1B", "\uFF0C", " ", ""]
   });
   const docs = await splitter.createDocuments([text]);

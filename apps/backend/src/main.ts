@@ -5,6 +5,35 @@ import { AppModule } from "./app.module";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { taskBus, TaskEvent } from "@langchain-rag/ai-engine";
+import { pino } from "pino";
+import { pinoHttp } from "pino-http";
+
+// 结构化日志根 logger：生产环境输出 JSON（接 ELK/Datadog 可检索），
+// 开发环境用 pino-pretty 输出彩色可读日志（pino-pretty 需装为 devDependency）
+const pinoRoot = pino({
+  level: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === "production" ? "info" : "debug"),
+  transport:
+    process.env.NODE_ENV !== "production"
+      ? { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } }
+      : undefined,
+});
+
+// 把 pino 适配成 Nest LoggerService（Nest 要求 log/error/warn/verbose 方法）
+class PinoNestLogger {
+  constructor(private readonly base: typeof pinoRoot) {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  log(msg: any, ...args: any[]) { this.base.info(String(msg), ...args); }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  info(msg: any, ...args: any[]) { this.base.info(String(msg), ...args); }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  warn(msg: any, ...args: any[]) { this.base.warn(String(msg), ...args); }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  error(msg: any, ...args: any[]) { this.base.error(String(msg), ...args); }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  debug(msg: any, ...args: any[]) { this.base.debug(String(msg), ...args); }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  verbose(msg: any, ...args: any[]) { this.base.debug(String(msg), ...args); }
+}
 
 // Prisma Pg adapter 返回原生 bigint，JSON.stringify 默认不支持序列化。
 // 添加全局 toJSON 将 BigInt 转为 Number（PRISMA 的 id 在安全范围内）。
@@ -44,7 +73,11 @@ function isPrivateNetworkOrigin(origin: string): boolean {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { logger: new PinoNestLogger(pinoRoot) });
+
+  // pino-http：每个请求自动输出 JSON 日志（method/path/status/耗时/user-agent），
+  // 生产环境接日志系统可按 requestId 串联一次请求的全部日志
+  app.use(pinoHttp({ logger: pinoRoot, autoLogging: { ignore: (req) => req.url === "/health" } }));
 
   // 全局响应拦截器 — 统一返回 { code, message, data }
   app.useGlobalInterceptors(new TransformInterceptor());
@@ -74,7 +107,7 @@ async function bootstrap() {
     taskBus.on(ev, (payload) => nestBus.emit(ev, payload));
   }
 
-  console.log("Server is running on port:", process.env.PORT ?? 3001);
+  pinoRoot.info(`Server is running on port: ${process.env.PORT ?? 3001}`);
   await app.listen(process.env.PORT ?? 3001);
 }
 bootstrap();

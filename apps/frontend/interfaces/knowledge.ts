@@ -50,8 +50,10 @@ export interface KnowledgeBaseDocument {
   fileSize: number;
   /** 切片数量 */
   chunkCount: number;
-  /** 文档状态：1=正常 */
+  /** 文档状态：1=正常 2=归档 3=删除 4=解析/索引失败 */
   status: number;
+  /** 失败原因（仅 status=4 时有值） */
+  errorMessage?: string | null;
   /** 上传时间 */
   createdAt: string;
 }

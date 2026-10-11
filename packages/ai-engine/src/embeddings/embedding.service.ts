@@ -91,32 +91,65 @@ class ArkMultimodalEmbeddings implements EmbeddingsInterface {
       input: [{ type: "text", text }],
     };
 
-    const res = await fetch(`${this.apiUrl}/embeddings/multimodal`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
-    });
+    // 网络抖动 / 5xx / 429 自动重试 3 次（指数退避 500ms→1s→2s）；
+    // 4xx 鉴权/参数错误和维度异常不重试（重试也不会成功）。
+    const MAX_RETRY = 3;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+      try {
+        const res = await fetch(`${this.apiUrl}/embeddings/multimodal`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.apiKey}` },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(30_000),
+        });
 
-    if (!res.ok) {
-      throw new Error(
-        `豆包 embedding 请求失败：HTTP ${res.status} ${(await res.text()).slice(0, 200)}`,
-      );
-    }
+        if (!res.ok) {
+          const status = res.status;
+          const detail = (await res.text()).slice(0, 200);
+          // 429 限流 / 5xx 服务端错误 → 可重试；4xx 其他 → 直接抛
+          if (status !== 429 && status < 500) {
+            throw new Error(`豆包 embedding 请求失败：HTTP ${status} ${detail}`);
+          }
+          throw new Error(`豆包 embedding 临时失败：HTTP ${status} ${detail}`);
+        }
 
-    const data = (await res.json()) as {
-      data?: { embedding?: number[] } | Array<{ embedding?: number[] }>;
-    };
-    // 单条请求：兼容 data.embedding（单对象）与 data[0].embedding（数组）两种返回形态
-    const item = Array.isArray(data.data) ? data.data[0] : data.data;
-    const vector = item?.embedding ?? [];
-    if (vector.length !== this.dimensions) {
-      throw new Error(
-        `豆包 embedding 维度异常：期望 ${this.dimensions}，实际 ${vector.length}`,
-      );
+        const data = (await res.json()) as {
+          data?: { embedding?: number[] } | Array<{ embedding?: number[] }>;
+        };
+        const item = Array.isArray(data.data) ? data.data[0] : data.data;
+        const vector = item?.embedding ?? [];
+        if (vector.length !== this.dimensions) {
+          // 维度异常是确定性错误（模型/配置问题），不重试直接抛
+          throw new Error(
+            `豆包 embedding 维度异常：期望 ${this.dimensions}，实际 ${vector.length}`,
+          );
+        }
+        return vector;
+      } catch (err) {
+        lastErr = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        const retriable =
+          msg.includes("临时失败") ||
+          msg.includes("429") ||
+          msg.includes("500") ||
+          msg.includes("502") ||
+          msg.includes("503") ||
+          msg.includes("504") ||
+          msg.includes("timeout") ||
+          msg.includes("fetch") ||
+          msg.includes("network");
+        if (attempt < MAX_RETRY && retriable) {
+          const waitMs = 500 * Math.pow(2, attempt);
+          await new Promise((r) => setTimeout(r, waitMs));
+          continue;
+        }
+        throw err;
+      }
     }
-    return vector;
+    throw lastErr;
   }
+
 }
 
 /** ark embedding endpoint（可用 EMBEDDING_API_URL 覆盖，便于本地 mock 联调；默认火山方舟） */

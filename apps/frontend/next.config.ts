@@ -1,7 +1,12 @@
 import { withAui } from "@assistant-ui/next";
 import type { NextConfig } from "next";
 
+// 后端地址：本地开发默认 localhost:3001；Docker 容器内通过环境变量 BACKEND_URL=backend:3001
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3001";
+
 const nextConfig: NextConfig = {
+  // 容器化部署：输出 standalone 产物（.next/standalone 自带最小 node_modules，镜像更小）
+  output: "standalone",
   experimental: {
     // 上传文档的请求体会经 rewrite 代理转发到后端。
     // Next 默认只透传前 10MB，超出部分被丢弃并告警「Request body exceeded 10MB」，
@@ -17,7 +22,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:3001/api/:path*",
+        destination: `${BACKEND_URL}/api/:path*`,
       },
     ];
   },

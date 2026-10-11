@@ -6,6 +6,7 @@ import { defaultEmbeddings } from "../embeddings";
 import type { ChunkData, ChunkMetadata, RagMatchType, RagSearchMode, RagSearchResult } from "../interfaces/rag";
 import { RAG_TABLE_NAME, RAG_EMBEDDING_DIMENSIONS } from "../constants/rag";
 import { lexicalIndex, type PgPoolLike } from "./bm25";
+import { rewriteQuery } from "./query-rewrite";
 import { emit, withTaskEvents, TaskEvent, TaskType } from "../events";
 import { normalizeParsedText } from "../loaders/extract";
 
@@ -205,10 +206,15 @@ export class RagService {
       // 先确保 PGVectorStore 已初始化 —— 它会顺带把 pg 连接池交给词法索引（keyword 模式也依赖它）
       await this.getStore();
 
+      // Query 改写：把口语化问题优化成更适合检索的形式（开关 QUERY_REWRITE_ENABLED）
+      // 失败/关闭时静默 fallback 原 query，不影响主流程
+      const { rewritten } = await rewriteQuery(query);
+      const searchQuery = rewritten;
+
       const lists: RagSearchResult[][] = [];
 
-      if (mode !== "keyword") lists.push(await this.semanticSearch(query, kbIds, fetchK));
-      if (mode !== "semantic") lists.push(await lexicalIndex.search(query, { kbIds, k: fetchK }));
+      if (mode !== "keyword") lists.push(await this.semanticSearch(searchQuery, kbIds, fetchK));
+      if (mode !== "semantic") lists.push(await lexicalIndex.search(searchQuery, { kbIds, k: fetchK }));
 
       if (mode !== "hybrid") return lists[0].slice(0, k);
       return fuseRrf(lists, k);
@@ -411,11 +417,14 @@ export async function splitTextToChunks(text: string, options?: SplitOptions): P
 
 /** 普通文本切分（表格豁免场景下只处理非表格块） */
 async function splitTextInternal(text: string): Promise<string[]> {
+  // 切片参数环境变量化：默认 350/40（中文 QA 场景实测最优）；
+  // 评测时可通过 CHUNK_SIZE / CHUNK_OVERLAP 跑参数网格，不用改代码。
+  // 注意：改这两个值需要重建索引（chunk 内容变了），旧向量不兼容。
+  const chunkSize = Number(process.env.CHUNK_SIZE) || 350;
+  const chunkOverlap = Number(process.env.CHUNK_OVERLAP) || 40;
   const splitter = new RecursiveCharacterTextSplitter({
-    // 中文场景 500 字符 ≈ 250 token 偏大，检索命中粒度粗；
-    // 350 字符 ≈ 175 token，更适合 QA 式问答，切片数略增但向量化成本可接受
-    chunkSize: 350,
-    chunkOverlap: 40,
+    chunkSize,
+    chunkOverlap,
     separators: ["\n\n", "\n", "。", "！", "？", "；", "，", " ", ""],
   });
 

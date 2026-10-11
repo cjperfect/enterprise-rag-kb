@@ -3,6 +3,7 @@ var CommonStatus = /* @__PURE__ */ ((CommonStatus2) => {
   CommonStatus2[CommonStatus2["NORMAL"] = 1] = "NORMAL";
   CommonStatus2[CommonStatus2["ARCHIVED"] = 2] = "ARCHIVED";
   CommonStatus2[CommonStatus2["DELETED"] = 3] = "DELETED";
+  CommonStatus2[CommonStatus2["FAILED"] = 4] = "FAILED";
   return CommonStatus2;
 })(CommonStatus || {});
 var ErrorCode = /* @__PURE__ */ ((ErrorCode2) => {

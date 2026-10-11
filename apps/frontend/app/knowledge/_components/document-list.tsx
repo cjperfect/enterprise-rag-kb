@@ -81,10 +81,21 @@ export function DocumentList({ documents, selectedId, onSelect, onDelete, loadin
           >
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">{FILE_TYPE_ICONS[doc.fileType] ?? DEFAULT_FILE_ICON}</div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{doc.fileName}</p>
-              <p className="text-xs text-muted-foreground">
-                {formatFileSize(doc.fileSize)} · {doc.chunkCount} 切片 · {dayjs(doc.createdAt).format("MM/DD")}
+              <p className="text-sm font-medium truncate flex items-center gap-2">
+                {doc.fileName}
+                {doc.status === 4 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-normal shrink-0" title={doc.errorMessage ?? undefined}>
+                    解析失败
+                  </span>
+                )}
               </p>
+              {doc.status === 4 && doc.errorMessage ? (
+                <p className="text-xs text-destructive/90 truncate" title={doc.errorMessage}>{doc.errorMessage}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {formatFileSize(doc.fileSize)} · {doc.chunkCount} 切片 · {dayjs(doc.createdAt).format("MM/DD")}
+                </p>
+              )}
             </div>
             <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase shrink-0 ${FILE_TYPE_COLORS[doc.fileType] ?? DEFAULT_FILE_COLOR}`}>{doc.fileType}</span>
             <Button

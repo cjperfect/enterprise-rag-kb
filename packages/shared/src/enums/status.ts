@@ -24,6 +24,8 @@ export enum CommonStatus {
   ARCHIVED = 2,
   /** 已删除（软删除） */
   DELETED = 3,
+  /** 解析/索引失败（保留文档记录与错误信息，前端可见、可重试或删除） */
+  FAILED = 4,
 }
 
 /**

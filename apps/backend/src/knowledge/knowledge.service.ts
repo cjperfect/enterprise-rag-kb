@@ -86,7 +86,7 @@ export class KnowledgeService {
       where: {
         knowledgeBaseId: kbId,
         userId,
-        status: { in: [CommonStatus.NORMAL, CommonStatus.ARCHIVED] },
+        status: { in: [CommonStatus.NORMAL, CommonStatus.ARCHIVED, CommonStatus.FAILED] },
       },
       orderBy: { createdAt: "desc" },
     });

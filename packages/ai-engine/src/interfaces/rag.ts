@@ -8,9 +8,6 @@ export interface ChunkData {
   tokenCount: number;
 }
 
-/** 检索模式：混合（语义+BM25，RRF 融合）/ 纯语义 / 纯关键词 */
-export type RagSearchMode = "hybrid" | "semantic" | "keyword";
-
 /** 结果的命中来源 */
 export type RagMatchType = "semantic" | "keyword" | "both";
 
@@ -29,9 +26,8 @@ export interface RagSearchResult {
   /** 切片在文档内的序号（用于混合检索时跨两路结果去重合并） */
   chunkIndex?: number;
   /**
-   * semantic 模式下是余弦相似度 (0~1)；
-   * hybrid 模式下是 RRF 融合分归一化到 0~1（两路都排名第 1 ≈ 1.0，单路第一 ≈ 0.5）；
-   * keyword 模式下是 BM25 原始分（无上界）
+   * 混合检索（统一模式）下是 RRF 融合分归一化到 0~1
+   * （两路都排名第 1 ≈ 1.0，单路第一 ≈ 0.5）
    */
   score: number;
   /** 命中来源 */
@@ -47,4 +43,24 @@ export interface ChunkMetadata {
   kbName?: string;
   /** 文档文件名 */
   documentName?: string;
+}
+
+/** 写入 ES 词法索引的切片（内部转换用） */
+export interface LexicalChunk {
+  index: number;
+  content: string;
+  kbId: number;
+  documentId: number;
+  kbName?: string;
+  documentName?: string;
+}
+
+/** ES 文档行（_source 结构，字段用 snake_case 与索引 mapping 对应） */
+export interface LexicalHit {
+  document_id: number;
+  kb_id: number;
+  chunk_index: number;
+  content: string;
+  kb_name?: string | null;
+  document_name?: string | null;
 }

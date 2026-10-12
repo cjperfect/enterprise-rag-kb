@@ -2,7 +2,7 @@
  * 表格保护切片验证：md 裸 GFM 表格、PDF 式 [表格] 块、假阳性单行、正文正常切分
  * 跑法：node test-fixtures/eval-table-split.cjs
  */
-const aiEngine = require("../packages/ai-engine/dist/index.cjs");
+const aiEngine = require("../packages/ai-engine/dist/index.js");
 
 const { splitTextToChunks } = aiEngine;
 

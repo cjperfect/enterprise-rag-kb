@@ -1,12 +1,10 @@
 {
-  "_comment": "评测参数网格：每条组合独立跑一遍 golden QA 集，结果横向对比",
+  "_comment": "评测参数网格：每条组合独立跑一遍 golden QA 集。当前只用 hybrid（ES BM25 + 向量 + RRF），需要横向对比时再放开 semantic/keyword",
   "kbIds": [1],
   "runs": [
     { "name": "hybrid-k5",  "k": 5, "mode": "hybrid" },
     { "name": "hybrid-k3",  "k": 3, "mode": "hybrid" },
-    { "name": "hybrid-k8",  "k": 8, "mode": "hybrid" },
-    { "name": "semantic-k5","k": 5, "mode": "semantic" },
-    { "name": "keyword-k5", "k": 5, "mode": "keyword" }
+    { "name": "hybrid-k8",  "k": 8, "mode": "hybrid" }
   ],
   "reportDir": "./reports"
 }

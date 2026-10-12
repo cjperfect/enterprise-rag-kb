@@ -16,7 +16,8 @@
  *   QUERY_REWRITE_TIMEOUT_MS    超时（默认 3s，比正常 LLM 调用短，改写快）
  */
 
-import { defaultModel } from "../agent/model";
+import { complete } from "@earendil-works/pi-ai/compat";
+import { resolveModel } from "../agent/model";
 
 const QUERY_REWRITE_ENABLED =
   (process.env.QUERY_REWRITE_ENABLED ?? "false").trim().toLowerCase() === "true";
@@ -50,16 +51,28 @@ export async function rewriteQuery(original: string): Promise<{ rewritten: strin
   if (original.trim().length < 6) return { rewritten: original, used: false };
 
   try {
-    const model = defaultModel.bind({ maxTokens: 60, temperature: 0 });
+    // 单次 completion（不走 agent loop）：默认模型 + 低 token 预算 + 硬超时
+    const model = await resolveModel();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    const res = await model.invoke(`${REWRITE_PROMPT}${original}`, {
-      signal: controller.signal as AbortSignal,
-    });
+    const res = await complete(
+      model,
+      {
+        systemPrompt: "你是检索查询优化助手。只输出改写后的查询本身，不要解释，不要引号。",
+        messages: [{ role: "user", content: `${REWRITE_PROMPT}${original}`, timestamp: Date.now() }],
+      },
+      { maxTokens: 60, temperature: 0, signal: controller.signal },
+    );
     clearTimeout(timer);
 
-    const text = (res.content?.toString() ?? "").trim().replace(/^["'"]|["'"]$/g, "").trim();
+    const text = res.content
+      .filter((b): b is { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim()
+      .replace(/^["'"]|["'"]$/g, "")
+      .trim();
 
     // 校验：改写结果不能为空、不能和原 query 完全一样（不然白调）、不能过长
     if (!text || text === original || text.length > 200) {

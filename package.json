@@ -36,5 +36,14 @@
     "prettier": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@google/genai",
+      "koffi",
+      "sharp",
+      "protobufjs",
+      "unrs-resolver"
+    ]
   }
 }

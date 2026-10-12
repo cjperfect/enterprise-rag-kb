@@ -19,7 +19,6 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   conversations  ChatConversation[]
-  messages       ChatMessage[]
   knowledgeBases KnowledgeBase[]
   documents      KnowledgeDocument[]
 

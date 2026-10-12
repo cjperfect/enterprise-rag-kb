@@ -5,7 +5,9 @@
 # 因为 backend 通过 workspace 引用 @langchain-rag/shared 和 @langchain-rag/ai-engine。
 
 # ---- Stage 1: 依赖 + 编译 ----
-FROM node:20-slim AS builder
+# node:22（LTS）：ai-engine 只产 ESM（pi 依赖 import.meta.url），
+# backend（CJS）依赖 Node 22.12+ 的 require(ESM) 能力
+FROM node:22-slim AS builder
 
 # prisma 需要 openssl
 RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -35,7 +37,7 @@ RUN pnpm --filter @langchain-rag/shared build \
  && pnpm --filter backend build
 
 # ---- Stage 2: 运行时 ----
-FROM node:20-slim AS runtime
+FROM node:22-slim AS runtime
 
 RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 

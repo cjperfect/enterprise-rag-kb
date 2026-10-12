@@ -184,12 +184,17 @@ const ComposerAction: FC = () => {
         className="ml-2"
         models={[
           {
+            id: "doubao-seed-2-0-mini-260428",
+            name: "Doubao Seed 2.0 Mini",
+            description: "火山方舟",
+          },
+          {
             id: "qwen3.5:0.8b",
-            name: "Qwen3.5 0.8B（本地）",
-            description: "Ollama",
+            name: "Qwen3.5 0.8B",
+            description: "Ollama 本地（需启动）",
           },
         ]}
-        defaultValue="qwen3.5:0.8b"
+        defaultValue="doubao-seed-2-0-mini-260428"
         size="sm"
       />
       <div className="flex items-center gap-1.5 ml-auto">

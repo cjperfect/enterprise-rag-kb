@@ -16,6 +16,28 @@ services:
       timeout: 5s
       retries: 5
 
+  # Elasticsearch —— 词法检索路（BM25 + 中文分词）
+  # 替代 PG 内手写 BM25 SQL：倒排索引、打分、分词全部交给 ES
+  # 官方 8.13.4 + smartcn 中文分析插件（见 docker/es/Dockerfile）
+  elasticsearch:
+    build:
+      context: es
+      dockerfile: Dockerfile
+    container_name: langchain-rag-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms256m -Xmx256m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   backend:
     build:
       context: ..
@@ -23,6 +45,7 @@ services:
     container_name: langchain-rag-backend
     environment:
       DATABASE_URL: postgresql://root:chenjiang@postgres:5432/langchain_rag
+      ES_URL: http://elasticsearch:9200
       NODE_ENV: production
       PORT: 3001
       # 其余配置从 .env 注入（或在部署平台配 secret）
@@ -45,6 +68,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
@@ -66,3 +91,4 @@ services:
 
 volumes:
   pgdata:
+  esdata:

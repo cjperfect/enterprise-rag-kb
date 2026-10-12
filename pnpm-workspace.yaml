@@ -2,12 +2,14 @@ packages:
   - "packages/*"
   - "apps/*"
 allowBuilds:
+  '@google/genai': true
+  koffi: true
   "@prisma/engines": true
   esbuild: true
   prisma: true
   protobufjs: true
   sharp: true
-  unrs-resolver: set this to true or false
+  unrs-resolver: true
 minimumReleaseAgeExclude:
   - "@langchain/core@1.2.3"
 

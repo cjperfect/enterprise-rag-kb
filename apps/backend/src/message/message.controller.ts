@@ -1,38 +1,44 @@
-import { Controller, Get, Post, Param, Body, Query, UseGuards, ParseIntPipe } from "@nestjs/common";
-import { MessageService } from "./message.service";
-import type { SendMessageDto, EditMessageDto, SwitchBranchDto } from "./dto/message.dto";
+import { Controller, Get, Post, Param, Body, Query, ParseIntPipe } from "@nestjs/common";
+import { PiSessionService } from "../chat/pi-session.service";
+import type { EditMessageDto, SwitchBranchDto } from "./dto/message.dto";
 // TODO: 临时跳过登录校验
 // import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { CurrentUser } from "../auth/current-user.decorator";
 
+/**
+ * 消息 / 分支操作 — 全部从 pi 会话（chat_conversation.session_data）派生。
+ *
+ * 消息 id 即 pi entry id（字符串）：
+ *   - 列表：沿 leaf（或指定 entry）回溯 parentId 链
+ *   - 编辑：分叉重放（在目标 entry 后开新分支 append 修改后消息）
+ *   - 切分支：仅移动 leaf_entry_id 指针
+ */
 @Controller("api")
 // TODO: 临时跳过登录校验
 // @UseGuards(JwtAuthGuard)
 export class MessageController {
-  constructor(private readonly messageService: MessageService) {}
+  constructor(private readonly piSessionService: PiSessionService) {}
 
+  /** 获取某个分支的完整消息链（不传 rootId = 当前分支） */
   @Get("conversations/:convId/messages")
   async getBranchMessages(@Param("convId", ParseIntPipe) convId: number, @Query("rootId") rootId?: string) {
-    return this.messageService.getBranchMessages(convId, rootId ? Number(rootId) : undefined);
+    return this.piSessionService.getMessages(convId, rootId || undefined);
   }
 
-  @Post("conversations/:convId/messages")
-  async sendMessage(@CurrentUser() user: { id: number }, @Param("convId", ParseIntPipe) convId: number, @Body() dto: SendMessageDto) {
-    return this.messageService.createUserMessage(user.id, convId, dto);
+  /** 获取某条消息的所有分支子节点 */
+  @Get("conversations/:convId/messages/:entryId/branches")
+  async getBranches(@Param("convId", ParseIntPipe) convId: number, @Param("entryId") entryId: string) {
+    return this.piSessionService.getBranches(convId, entryId);
   }
 
-  @Post("messages/:id/edit")
-  async editMessage(@Param("id", ParseIntPipe) id: number, @Body() dto: EditMessageDto) {
-    return this.messageService.editMessage(id, dto);
+  /** 编辑消息（分叉重放：在目标 entry 后开新分支，返回新消息） */
+  @Post("conversations/:convId/messages/:entryId/edit")
+  async editMessage(@Param("convId", ParseIntPipe) convId: number, @Param("entryId") entryId: string, @Body() dto: EditMessageDto) {
+    return this.piSessionService.editMessage(convId, entryId, dto.content);
   }
 
-  @Get("messages/:id/branches")
-  async getBranches(@Param("id", ParseIntPipe) id: number) {
-    return this.messageService.getBranches(id);
-  }
-
+  /** 切换当前分支（移动 leaf 指针，下次对话从该 entry 恢复） */
   @Post("conversations/:convId/switch-branch")
   async switchBranch(@Param("convId", ParseIntPipe) convId: number, @Body() dto: SwitchBranchDto) {
-    return this.messageService.switchBranch(convId, dto.messageId);
+    return this.piSessionService.switchBranch(convId, dto.entryId);
   }
 }

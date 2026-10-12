@@ -27,7 +27,7 @@ if (fs.existsSync(envPath)) {
 }
 
 // 2) 引入 ai-engine 的 ragService（复用现有检索，不重造）
-const { ragService } = require("../packages/ai-engine/dist/index.cjs");
+const { ragService } = require("../packages/ai-engine/dist/index.js");
 const { scoreItem, aggregate } = require("./scorer.cjs");
 
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, "config.json"), "utf-8"));
@@ -55,7 +55,6 @@ async function runOne(run, golden) {
       const results = await ragService.search(item.query, {
         kbIds: config.kbIds,
         k: run.k,
-        mode: run.mode,
       });
       scored.push(scoreItem(item, results, ks));
     }

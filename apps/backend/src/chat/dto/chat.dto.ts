@@ -7,8 +7,8 @@ export interface ChatDto {
   model?: string;
   /** 是否开启思考模式 */
   thinking_enabled?: boolean;
-  /** 父级消息 ID */
-  parent_message_id?: number;
+  /** 父级消息 entry id（pi entry id，字符串；不传 = 从当前分支尾继续） */
+  parent_message_id?: string;
   /** @mention 选中的知识库 ID 列表 */
   knowledge_ids?: number[];
   /** 知识库内聊天的知识库 ID */
@@ -28,8 +28,8 @@ export type ChatStreamEvent =
   | {
       event: "done";
       data: {
-        request_message_id: number;
-        response_message_id: number;
+        request_message_id: string | null;
+        response_message_id: string | null;
         rag_sources?: Array<{ kbId: number; kbName: string; documentId: number; documentName: string; score: number }>;
       };
     }

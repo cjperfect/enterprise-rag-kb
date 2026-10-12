@@ -24,7 +24,7 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const { AiEngine } = require("../packages/ai-engine/dist/index.cjs");
+const { AiEngine } = require("../packages/ai-engine/dist/index.js");
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, "config.json"), "utf-8"));
 
 // 拒答话术关键词（prompt 里要求的固定回复）

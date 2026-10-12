@@ -1,155 +1,66 @@
 /**
- * BM25 词法检索 — 纯 SQL 实现在 PostgreSQL 里
+ * 词法检索（BM25）— Elasticsearch 实现
  *
- * 为什么不用数据库自带全文检索：镜像 pgvector/pgvector:pg17 没有 zhparser/pg_jieba，
- * 内置 to_tsvector 无法切中文。所以分词在 TS 侧完成（见 tokenizer.ts），
- * token 数组落到旁表 rag_bm25_index，BM25 打分公式直接翻译成一条 SQL：
+ * 原实现是在 PostgreSQL 里用 GIN 数组索引 + 手写 BM25 打分 SQL（见 git 历史），
+ * 打分公式、倒排、中文分词全部自建，代码量大且受限于 PG 无中文分析器。
+ * 现改为 ES：倒排索引、BM25 打分、IK 中文分词全部交给 ES 引擎。
  *
- *   score(q,d) = Σ_t  idf(t) · tf(t,d)·(k1+1) / ( tf(t,d) + k1·(1-b+b·|d|/avgdl) )
- *   idf(t)     = ln(1 + (N - df(t) + 0.5) / (df(t) + 0.5))      -- Lucene 风格，恒为非负
+ * 与向量路（PGVector）保持接口一致，仅替换内部实现：
+ *   - attach()          连接 ES（惰性建索引，幂等）
+ *   - addChunks()       批量写入词法索引（bulk + refresh）
+ *   - search()          关键词检索（ES BM25 打分，支持 kbId 过滤）
+ *   - deleteByDocumentId() 删除某文档的全部词法索引
  *
- * 表结构与向量库解耦：向量在 langchain_pg_embedding（PGVectorStore 管），
- * 词法在这张旁表，删除/重建时两边同步。
+ * RRF 融合只看名次不看原始分，因此 ES 的 BM25 分（无上界）与
+ * PGVector 的余弦分（0~1）可直接混用，无需归一化。
+ *
+ * 配置（apps/backend/.env）：
+ *   ES_URL   Elasticsearch 地址（默认 http://localhost:9200）
  */
-import { tokenizeForIndex, tokenizeQuery } from "./tokenizer";
-import type { ChunkData, RagSearchResult } from "../interfaces/rag";
-import { LEXICAL_TABLE_NAME, RAG_TABLE_NAME } from "../constants/rag";
-
-/** BM25 调参：k1 控制词频饱和（1.2~2.0），b 控制长度归一化强度（0~1） */
-export const BM25_PARAMS = { k1: 1.2, b: 0.75 };
-
-/** 只声明用到的 pg.Pool 子集 —— 复用 PGVectorStore 内部已建好的连接池，避免额外依赖 */
-export interface PgPoolLike {
-  query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
-}
-
-interface LexicalChunk {
-  index: number;
-  content: string;
-  kbId: number;
-  documentId: number;
-  kbName?: string;
-  documentName?: string;
-}
-
-/** BM25 打分 SQL：$1=kbIds(int[]|null) $2=query tokens(text[]) $3=limit */
-const BM25_SQL = `
-WITH params AS (SELECT $4::float8 AS k1, $5::float8 AS b),
-docs AS (
-  SELECT id, document_id, kb_id, chunk_index, content, kb_name, document_name, tokens, token_count
-  FROM ${LEXICAL_TABLE_NAME}
-  WHERE $1::int[] IS NULL OR kb_id = ANY($1)
-),
-corpus AS (
-  SELECT count(*)::float8 AS n, coalesce(avg(token_count)::float8, 1) AS avgdl
-  FROM docs
-),
-terms AS (SELECT DISTINCT unnest($2::text[]) AS term),
-cands AS (
-  SELECT * FROM docs WHERE tokens && $2::text[]
-),
-df AS (
-  SELECT t.term, count(c.id)::float8 AS n_df
-  FROM terms t
-  LEFT JOIN cands c ON c.tokens @> ARRAY[t.term]
-  GROUP BY t.term
-),
-idf AS (
-  SELECT d.term, ln(1 + (co.n - d.n_df + 0.5) / (d.n_df + 0.5)) AS idf
-  FROM df d
-  CROSS JOIN corpus co
-  WHERE d.n_df > 0
-),
-tf AS (
-  SELECT c.id, w.term, count(*)::float8 AS n_tf
-  FROM cands c
-  JOIN LATERAL unnest(c.tokens) AS w(term) ON true
-  JOIN terms t ON t.term = w.term
-  GROUP BY c.id, w.term
-)
-SELECT c.document_id, c.kb_id, c.chunk_index, c.content, c.kb_name, c.document_name,
-       sum(i.idf * (tf.n_tf * (p.k1 + 1)) / (tf.n_tf + p.k1 * (1 - p.b + p.b * c.token_count / co.avgdl)))::float8 AS score
-FROM tf
-JOIN idf i ON i.term = tf.term
-JOIN cands c ON c.id = tf.id
-CROSS JOIN params p
-CROSS JOIN corpus co
-GROUP BY c.document_id, c.kb_id, c.chunk_index, c.content, c.kb_name, c.document_name, p.k1, p.b, co.avgdl
-ORDER BY score DESC
-LIMIT $3
-`;
+import { Client } from "@elastic/elasticsearch";
+import type { ChunkData, LexicalChunk, LexicalHit, RagSearchResult } from "../interfaces/rag";
+import { LEXICAL_INDEX_NAME } from "../constants/rag";
 
 export class LexicalIndexService {
-  private pool: PgPoolLike | null = null;
+  private client: Client | null = null;
   private ready: Promise<void> | null = null;
 
-  /** 绑定 pg 连接池（来自 PGVectorStore 内部 pool），首次使用时建表 + 回填 */
-  attach(pool: PgPoolLike): void {
-    if (this.pool) return;
-    this.pool = pool;
+  /** 连接 ES + 建索引（惰性、幂等） */
+  attach(): void {
+    if (this.ready) return;
     this.ready = this.init();
   }
 
   private async init(): Promise<void> {
-    const pool = this.pool!;
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${LEXICAL_TABLE_NAME} (
-        id            serial PRIMARY KEY,
-        document_id   int  NOT NULL,
-        kb_id         int  NOT NULL,
-        chunk_index   int  NOT NULL,
-        content       text NOT NULL,
-        kb_name       text,
-        document_name text,
-        tokens        text[] NOT NULL,
-        token_count   int  NOT NULL
-      )
-    `);
-    await pool.query(
-      `CREATE INDEX IF NOT EXISTS lexical_tokens_idx ON ${LEXICAL_TABLE_NAME} USING GIN (tokens)`,
-    );
-    await pool.query(`CREATE INDEX IF NOT EXISTS lexical_doc_idx ON ${LEXICAL_TABLE_NAME} (document_id)`);
+    const node = process.env.ES_URL ?? "http://localhost:9200";
+    this.client = new Client({ node });
 
-    await this.backfillFromVectorStore();
-  }
-
-  /**
-   * 一次性回填：BM25 表是空的、但向量表里已有历史切片时，
-   * 从向量表把 content+metadata 搬过来补建词法索引（否则老文档永远搜不到关键词）。
-   */
-  private async backfillFromVectorStore(): Promise<void> {
-    const pool = this.pool!;
-    const lex = await pool.query(`SELECT count(*)::int AS n FROM ${LEXICAL_TABLE_NAME}`);
-    if ((lex.rows[0] as { n: number }).n > 0) return;
-
-    const res = await pool.query(
-      `SELECT content, metadata FROM ${RAG_TABLE_NAME} WHERE (metadata->>'documentId') IS NOT NULL`,
-    );
-    const chunks: LexicalChunk[] = [];
-    for (const row of res.rows as { content: string; metadata: Record<string, unknown> }[]) {
-      const m = row.metadata;
-      if (m.documentId == null || m.kbId == null || m.chunkIndex == null || !row.content) continue;
-      chunks.push({
-        index: Number(m.chunkIndex),
-        content: row.content,
-        kbId: Number(m.kbId),
-        documentId: Number(m.documentId),
-        kbName: m.kbName as string | undefined,
-        documentName: m.documentName as string | undefined,
+    // 索引不存在才建：中文用官方 smartcn 分析器（词典 + bigram 兜底，
+    // 见 docker/es/Dockerfile；后续拿到 IK 插件可直接换成 ik_max_word/ik_smart）
+    const exists = await this.client.indices.exists({ index: LEXICAL_INDEX_NAME });
+    if (!exists) {
+      await this.client.indices.create({
+        index: LEXICAL_INDEX_NAME,
+        mappings: {
+          properties: {
+            document_id: { type: "keyword" },
+            kb_id: { type: "keyword" },
+            chunk_index: { type: "integer" },
+            content: { type: "text", analyzer: "smartcn" },
+            kb_name: { type: "keyword" },
+            document_name: { type: "keyword" },
+          },
+        },
       });
-    }
-    // 分批插入，避免一条 SQL 参数过多
-    const BATCH = 500;
-    for (let i = 0; i < chunks.length; i += BATCH) {
-      await this.insertChunks(chunks.slice(i, i + BATCH));
     }
   }
 
   private async waitReady(): Promise<void> {
+    this.attach(); // 惰性自愈：调用方忘记 attach 时自动连接（幂等）
     if (this.ready) await this.ready;
   }
 
-  /** 写入一批切片的词法索引 */
+  /** 写入一批切片的词法索引（bulk，小数据量写完 refresh 立即可搜） */
   async addChunks(
     kbId: number,
     documentId: number,
@@ -171,64 +82,71 @@ export class LexicalIndexService {
   }
 
   private async insertChunks(chunks: LexicalChunk[]): Promise<void> {
-    const pool = this.pool!;
-    const values: unknown[] = [];
-    const tuples = chunks.map((c, i) => {
-      const base = i * 8;
-      const tokens = tokenizeForIndex(c.content);
-      values.push(
-        c.documentId,
-        c.kbId,
-        c.index,
-        c.content,
-        c.kbName ?? null,
-        c.documentName ?? null,
-        tokens,
-        tokens.length,
-      );
-      // 数组参数必须显式 ::text[]，否则 node-pg 以 unknown 类型发送会报
-      // "could not determine polymorphic type"
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}::text[], $${base + 8})`;
-    });
-    await pool.query(
-      `INSERT INTO ${LEXICAL_TABLE_NAME}
-         (document_id, kb_id, chunk_index, content, kb_name, document_name, tokens, token_count)
-       VALUES ${tuples.join(", ")}`,
-      values,
-    );
+    const client = this.client!;
+    const BATCH = 500;
+    for (let i = 0; i < chunks.length; i += BATCH) {
+      const batch = chunks.slice(i, i + BATCH);
+      const operations = batch.flatMap((c) => [
+        { index: { _index: LEXICAL_INDEX_NAME } },
+        {
+          document_id: c.documentId,
+          kb_id: c.kbId,
+          chunk_index: c.index,
+          content: c.content,
+          kb_name: c.kbName ?? null,
+          document_name: c.documentName ?? null,
+        },
+      ]);
+      const res = await client.bulk({ operations, refresh: true });
+      if (res.errors) {
+        const first = res.items.find((it) => it.index?.error)?.index?.error?.reason;
+        throw new Error(`ES 写入失败: ${first ?? "未知错误"}`);
+      }
+    }
   }
 
   /** 删除某文档的全部词法索引 */
   async deleteByDocumentId(documentId: number): Promise<void> {
     await this.waitReady();
-    await this.pool!.query(`DELETE FROM ${LEXICAL_TABLE_NAME} WHERE document_id = $1`, [documentId]);
+    await this.client!.deleteByQuery({
+      index: LEXICAL_INDEX_NAME,
+      query: { term: { document_id: documentId } },
+      refresh: true,
+    });
   }
 
-  /** BM25 关键词检索 */
+  /** BM25 关键词检索（match 查询 = ES 默认 BM25 打分，kbId 过滤） */
   async search(query: string, options: { kbIds?: number[]; k?: number } = {}): Promise<RagSearchResult[]> {
     await this.waitReady();
     const { kbIds, k = 5 } = options;
-    const tokens = tokenizeQuery(query);
-    if (tokens.length === 0) return [];
+    if (!query.trim()) return [];
 
-    const res = await this.pool!.query(BM25_SQL, [
-      kbIds && kbIds.length > 0 ? kbIds : null,
-      tokens,
-      k,
-      BM25_PARAMS.k1,
-      BM25_PARAMS.b,
-    ]);
+    const res = await this.client!.search<LexicalHit>({
+      index: LEXICAL_INDEX_NAME,
+      size: k,
+      track_scores: true,
+      query: {
+        bool: {
+          filter: kbIds && kbIds.length > 0 ? [{ terms: { kb_id: kbIds } }] : [],
+          must: [{ match: { content: query } }],
+        },
+      },
+      _source: ["document_id", "kb_id", "chunk_index", "content", "kb_name", "document_name"],
+    });
 
-    return (res.rows as Record<string, unknown>[]).map((r) => ({
-      content: r.content as string,
-      documentId: Number(r.document_id),
-      kbId: Number(r.kb_id),
-      kbName: (r.kb_name as string | null) ?? undefined,
-      documentName: (r.document_name as string | null) ?? undefined,
-      chunkIndex: Number(r.chunk_index),
-      score: Number(r.score),
-      matchType: "keyword" as const,
-    }));
+    return res.hits.hits.map((h) => {
+      const s = h._source!;
+      return {
+        content: s.content,
+        documentId: Number(s.document_id),
+        kbId: Number(s.kb_id),
+        kbName: s.kb_name ?? undefined,
+        documentName: s.document_name ?? undefined,
+        chunkIndex: Number(s.chunk_index),
+        score: h._score ?? 0,
+        matchType: "keyword" as const,
+      };
+    });
   }
 }
 

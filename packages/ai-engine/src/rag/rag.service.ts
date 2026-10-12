@@ -3,14 +3,14 @@ import type { EmbeddingsInterface } from "@langchain/core/embeddings";
 import { Document } from "@langchain/core/documents";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { defaultEmbeddings } from "../embeddings";
-import type { ChunkData, ChunkMetadata, RagMatchType, RagSearchMode, RagSearchResult } from "../interfaces/rag";
+import type { ChunkData, ChunkMetadata, RagMatchType, RagSearchResult } from "../interfaces/rag";
 import { RAG_TABLE_NAME, RAG_EMBEDDING_DIMENSIONS } from "../constants/rag";
-import { lexicalIndex, type PgPoolLike } from "./bm25";
+import { lexicalIndex } from "./bm25";
 import { rewriteQuery } from "./query-rewrite";
 import { emit, withTaskEvents, TaskEvent, TaskType } from "../events";
 import { normalizeParsedText } from "../loaders/extract";
 
-export type { ChunkData, RagSearchResult, RagSearchMode, RagMatchType };
+export type { ChunkData, RagSearchResult, RagMatchType };
 
 /** RRF（Reciprocal Rank Fusion）常数：弱化头部名次差距，业界惯用 60 */
 const RRF_K = 60;
@@ -20,7 +20,7 @@ const RRF_K = 60;
  *
  * 使用 pgvector 的 PGVectorStore，AI Engine 负责全部索引操作，
  * 后端仅调用 indexDocument / search / deleteByDocumentId。
- * BM25 词法索引落在同库旁表 rag_bm25_index（见 bm25.ts），与向量表同步写入/删除。
+ * BM25 词法索引在 Elasticsearch（见 bm25.ts），与向量表同步写入/删除。
  *
  * 每个耗时方法用 withTaskEvents 包一层，自动发送 started/completed/failed 事件，
  * 中间进度在回调里手动 emit PROGRESS。
@@ -56,8 +56,8 @@ export class RagService {
       ...config,
       dimensions: RAG_EMBEDDING_DIMENSIONS,
     });
-    // BM25 复用 PGVectorStore 内部的 pg 连接池（同库同连接串，省一个 Pool 也省一个依赖）
-    lexicalIndex.attach((this.vectorStore as unknown as { pool: PgPoolLike }).pool);
+    // 词法索引接 ES（倒排 + BM25 + IK 分词，见 bm25.ts）
+    lexicalIndex.attach();
     return this.vectorStore;
   }
 
@@ -185,25 +185,24 @@ export class RagService {
   }
 
   /**
-   * 检索（默认混合模式）
+   * 检索（统一混合模式：向量语义 + ES BM25 词法，RRF 融合）
    *
-   * - semantic：向量余弦相似度，长于语义近似（"如何请假" 能命中 "休假申请流程"）
-   * - keyword：BM25 词法匹配，长于精确词（型号、错误码、人名等专有名词）
-   * - hybrid：两路各取候选，用 RRF 融合排名 —— rank 求和不用原始分，
-   *   天然规避"余弦分 0~1 与 BM25 分无上界"不可比的问题
+   * 两路各取候选，用 RRF 融合排名 —— rank 求和不用原始分，
+   * 天然规避"余弦分 0~1 与 BM25 分无上界"不可比的问题。
+   * 语义路长于近似匹配（"如何请假" 命中 "休假申请流程"），
+   * 词法路长于精确词（型号、错误码、人名等专有名词），两路互补。
    *
    * @param query 用户问题
    * @param options.kbIds 限制在指定知识库
    * @param options.k top-K
-   * @param options.mode 检索模式，默认 hybrid
    */
-  async search(query: string, options: { kbIds?: number[]; k?: number; mode?: RagSearchMode } = {}): Promise<RagSearchResult[]> {
-    const { kbIds, k = 5, mode = "hybrid" } = options;
+  async search(query: string, options: { kbIds?: number[]; k?: number } = {}): Promise<RagSearchResult[]> {
+    const { kbIds, k = 5 } = options;
     // 每路多召回一些候选再融合，比各路只取 top-k 融合效果好
     const fetchK = Math.max(k * 2, 10);
 
     return withTaskEvents(TaskType.RAG_SEARCH, { kbIds, message: `检索：${query.slice(0, 50)}` }, async () => {
-      // 先确保 PGVectorStore 已初始化 —— 它会顺带把 pg 连接池交给词法索引（keyword 模式也依赖它）
+      // 先确保 PGVectorStore 已初始化（词法索引也由它顺带 attach）
       await this.getStore();
 
       // Query 改写：把口语化问题优化成更适合检索的形式（开关 QUERY_REWRITE_ENABLED）
@@ -211,12 +210,10 @@ export class RagService {
       const { rewritten } = await rewriteQuery(query);
       const searchQuery = rewritten;
 
-      const lists: RagSearchResult[][] = [];
-
-      if (mode !== "keyword") lists.push(await this.semanticSearch(searchQuery, kbIds, fetchK));
-      if (mode !== "semantic") lists.push(await lexicalIndex.search(searchQuery, { kbIds, k: fetchK }));
-
-      if (mode !== "hybrid") return lists[0].slice(0, k);
+      const lists: RagSearchResult[][] = [
+        await this.semanticSearch(searchQuery, kbIds, fetchK),
+        await lexicalIndex.search(searchQuery, { kbIds, k: fetchK }),
+      ];
       return fuseRrf(lists, k);
     });
   }

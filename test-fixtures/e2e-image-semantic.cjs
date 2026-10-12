@@ -10,7 +10,7 @@ for (const line of fs.readFileSync(envFile, "utf8").split("\n")) {
   if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].trim();
 }
 
-const { loadPdf } = require("C:/Users/ChenJiang/Desktop/langchain-rag/packages/ai-engine/dist/index.cjs");
+const { loadPdf } = require("C:/Users/ChenJiang/Desktop/langchain-rag/packages/ai-engine/dist/index.js");
 
 const pdf = "C:/Users/ChenJiang/Desktop/langchain-rag/test-fixtures/测试PDF-表格与流程图.pdf";
 

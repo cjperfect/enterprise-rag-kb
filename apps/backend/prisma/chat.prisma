@@ -1,6 +1,11 @@
 // ============================================================================
-// 1. chat_conversation — 会话表
+// 1. chat_conversation — 会话（元数据 + 分支指针）
 // ============================================================================
+// 业务元数据（标题/用户/知识库/统计）在此；pi 会话本体由 pi 原生 JSONL 文件
+// 持久化（ai-engine 管理，路径 .pi-sessions/conv-<id>.jsonl），本表仅保留
+// leaf_entry_id 指针：pi 从文件恢复时 leaf 总是文件最后一条 entry，切分支后
+// 必须单独存目标 entry id，下次对话 ai-engine 据此 branch 定位。
+// 消息列表、分支、编辑、切分支由 PiSessionService 操作 JSONL 派生。
 
 model ChatConversation {
   id     BigInt @id @default(autoincrement())
@@ -9,7 +14,10 @@ model ChatConversation {
   title        String? @db.VarChar(255)
   systemPrompt String? @map("system_prompt") @db.Text
 
-  currentMessageId BigInt? @map("current_message_id")
+  // pi 会话本体存 JSONL 文件（ai-engine 管理）；PG 记录文件位置 + 分支指针
+  sessionFile String? @map("session_file") @db.VarChar(255)
+  // 当前分支尾 entry id（跨请求切分支用）
+  leafEntryId String? @map("leaf_entry_id") @db.VarChar(255)
 
   messageCount Int @default(0) @map("message_count")
   totalTokens  Int @default(0) @map("total_tokens")
@@ -23,245 +31,10 @@ model ChatConversation {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  user           User              @relation(fields: [userId], references: [id])
-  knowledge      KnowledgeBase?    @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
-  currentMessage ChatMessage?      @relation("CurrentMessage", fields: [currentMessageId], references: [id])
-  messages       ChatMessage[]
-  summaries      ChatSummary[]
-  contexts       ChatContext[]
-  agentRuns      ChatAgentRun[]
+  user      User           @relation(fields: [userId], references: [id])
+  knowledge KnowledgeBase? @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
 
   @@index([userId, lastMessageAt(sort: Desc)])
   @@index([status])
   @@map("chat_conversation")
-}
-
-// ============================================================================
-// 2. chat_message — 消息树（核心）
-// ============================================================================
-
-model ChatMessage {
-  id             BigInt @id @default(autoincrement())
-  userId         Int    @map("user_id")
-  conversationId BigInt @map("conversation_id")
-
-  parentId BigInt? @map("parent_id")
-  rootId   BigInt? @map("root_id")
-
-  role             String  @db.VarChar(20)
-  content          String? @db.Text
-  reasoningContent String? @map("reasoning_content") @db.Text
-  model            String? @db.VarChar(100)
-
-  messageType String @default("text") @map("message_type") @db.VarChar(50)
-
-  tokenCount Int @default(0) @map("token_count")
-  status     Int @default(1) @db.SmallInt
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user         User             @relation(fields: [userId], references: [id])
-  conversation ChatConversation @relation(fields: [conversationId], references: [id])
-
-  parent   ChatMessage?  @relation("MessageTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children ChatMessage[] @relation("MessageTree")
-
-  root     ChatMessage?  @relation("MessageBranch", fields: [rootId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  branches ChatMessage[] @relation("MessageBranch")
-
-  attachments ChatAttachment[]
-  chunks      ChatMessageChunk[]
-  toolCalls   ChatToolCall[]
-  agentRuns   ChatAgentRun[]
-
-  contexts             ChatContext[]
-  ragReferences        ChatRagReference[]
-  currentConversations ChatConversation[] @relation("CurrentMessage")
-
-  @@index([userId, createdAt])
-  @@index([conversationId, parentId])
-  @@index([conversationId, rootId])
-  @@index([conversationId, createdAt])
-  @@map("chat_message")
-}
-
-// ============================================================================
-// 3. chat_summary — 会话摘要表
-// ============================================================================
-
-model ChatSummary {
-  id             BigInt @id @default(autoincrement())
-  conversationId BigInt @map("conversation_id")
-  branchMessageId BigInt @map("branch_message_id")
-
-  summary String @db.Text
-
-  startMessageId BigInt @map("start_message_id")
-  endMessageId   BigInt @map("end_message_id")
-
-  tokenCount Int? @map("token_count")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  conversation ChatConversation @relation(fields: [conversationId], references: [id])
-  contexts     ChatContext[]
-
-  @@index([conversationId, branchMessageId])
-  @@map("chat_summary")
-}
-
-// ============================================================================
-// 4. chat_context — 模型请求上下文表
-// ============================================================================
-
-model ChatContext {
-  id             BigInt @id @default(autoincrement())
-  conversationId BigInt @map("conversation_id")
-  messageId      BigInt @map("message_id")
-  summaryId      BigInt? @map("summary_id")
-
-  contextMessageIds Json? @map("context_message_ids") @db.JsonB
-  rawMessages       Json? @map("raw_messages") @db.JsonB
-
-  model        String  @db.VarChar(100)
-  systemPrompt String? @map("system_prompt") @db.Text
-
-  inputTokens  Int @default(0) @map("input_tokens")
-  outputTokens Int @default(0) @map("output_tokens")
-
-  latency Int?
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  conversation ChatConversation @relation(fields: [conversationId], references: [id])
-  message      ChatMessage      @relation(fields: [messageId], references: [id])
-  summary      ChatSummary?     @relation(fields: [summaryId], references: [id])
-
-  @@index([conversationId, messageId])
-  @@index([createdAt])
-  @@map("chat_context")
-}
-
-// ============================================================================
-// 5. chat_attachment — 附件表
-// ============================================================================
-
-model ChatAttachment {
-  id        BigInt @id @default(autoincrement())
-  messageId BigInt @map("message_id")
-
-  fileName String  @map("file_name") @db.VarChar(255)
-  fileType String? @map("file_type") @db.VarChar(50)
-  fileUrl  String  @map("file_url") @db.VarChar(500)
-  fileSize BigInt? @map("file_size")
-  mimeType String? @map("mime_type") @db.VarChar(100)
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  message ChatMessage @relation(fields: [messageId], references: [id])
-
-  @@index([messageId])
-  @@map("chat_attachment")
-}
-
-// ============================================================================
-// 6. chat_message_chunk — 流式输出表
-// ============================================================================
-
-model ChatMessageChunk {
-  id        BigInt @id @default(autoincrement())
-  messageId BigInt @map("message_id")
-
-  chunkIndex  Int  @map("chunk_index")
-  totalChunks Int? @map("total_chunks")
-
-  content String @db.Text
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  message ChatMessage @relation(fields: [messageId], references: [id])
-
-  @@unique([messageId, chunkIndex])
-  @@map("chat_message_chunk")
-}
-
-// ============================================================================
-// 7. chat_tool_call — 工具调用表
-// ============================================================================
-
-model ChatToolCall {
-  id        BigInt @id @default(autoincrement())
-  messageId BigInt @map("message_id")
-
-  toolCallId String @map("tool_call_id") @db.VarChar(100)
-  toolName   String @map("tool_name") @db.VarChar(100)
-
-  arguments Json? @db.JsonB
-  result    Json? @db.JsonB
-
-  status   Int @default(0) @db.SmallInt
-  duration Int?
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  message ChatMessage @relation(fields: [messageId], references: [id])
-
-  @@index([messageId])
-  @@index([toolCallId])
-  @@map("chat_tool_call")
-}
-
-// ============================================================================
-// 8. chat_agent_run — Agent 执行记录
-// ============================================================================
-
-model ChatAgentRun {
-  id               BigInt @id @default(autoincrement())
-  conversationId   BigInt @map("conversation_id")
-  messageId        BigInt? @map("message_id")
-  parentAgentRunId BigInt? @map("parent_agent_run_id")
-
-  agentName String  @map("agent_name") @db.VarChar(100)
-  task      String? @db.VarChar(500)
-
-  input  Json? @db.JsonB
-  output Json? @db.JsonB
-
-  status   Int @default(0) @db.SmallInt
-  duration Int?
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  conversation ChatConversation @relation(fields: [conversationId], references: [id])
-  message      ChatMessage?     @relation(fields: [messageId], references: [id])
-
-  parentAgentRun ChatAgentRun?  @relation("AgentChain", fields: [parentAgentRunId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  childAgentRuns ChatAgentRun[] @relation("AgentChain")
-
-  @@index([conversationId])
-  @@index([parentAgentRunId])
-  @@index([messageId])
-  @@map("chat_agent_run")
-}
-
-// ============================================================================
-// 9. chat_rag_reference — RAG 知识库引用
-// ============================================================================
-
-model ChatRagReference {
-  id         BigInt @id @default(autoincrement())
-  messageId  BigInt @map("message_id")
-  documentId BigInt @map("document_id")
-  chunkId    BigInt? @map("chunk_id")
-
-  content String? @db.Text
-  score   Decimal? @db.Decimal(5, 4)
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  message ChatMessage @relation(fields: [messageId], references: [id])
-
-  @@index([messageId])
-  @@index([documentId])
-  @@map("chat_rag_reference")
 }

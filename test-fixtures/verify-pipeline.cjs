@@ -1,5 +1,5 @@
 // 临时验证：mupdf 探测 + Unstructured 云识别（key 从 .env 读取，不硬编码）
-const { detectPdfImageBlocks, parsePdfWithUnstructured } = require("C:/Users/ChenJiang/Desktop/langchain-rag/packages/ai-engine/dist/index.cjs");
+const { detectPdfImageBlocks, parsePdfWithUnstructured } = require("C:/Users/ChenJiang/Desktop/langchain-rag/packages/ai-engine/dist/index.js");
 const fs = require("fs");
 
 // 从 apps/backend/.env 读取 UNSTRUCTURED_API_KEY

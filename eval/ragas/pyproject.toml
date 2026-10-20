@@ -1,0 +1,13 @@
+[project]
+name = "ragas-eval"
+version = "0.1.0"
+description = "ragas 评测：给 langchain-rag 项目的 RAG 链路打分"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "ragas==0.2.14",
+    "langchain-community<0.4",
+    "langchain-ollama>=0.2.0",
+]
+
+[tool.uv]
+package = false

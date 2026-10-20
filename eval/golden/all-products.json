@@ -1,0 +1,297 @@
+[
+  {
+    "id": "n6-001",
+    "query": "N6 mini 电池容量是多少？",
+    "expect_doc": "N6 mini",
+    "expect_keywords": [
+      "1800 mAh"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "n6-002",
+    "query": "N6 mini 充满电要多久？",
+    "expect_doc": "N6 mini",
+    "expect_keywords": [
+      "2.5 小时"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "n6-003",
+    "query": "哪些人不能用 N6 mini？",
+    "expect_doc": "N6 mini",
+    "expect_keywords": [
+      "心脏起搏器"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n6-004",
+    "query": "N6 mini 充电时灯是什么颜色？",
+    "expect_doc": "N6 mini",
+    "expect_keywords": [
+      "红色"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "nd5-001",
+    "query": "NeckD5 的热敷温度是多少？",
+    "expect_doc": "NeckD5",
+    "expect_keywords": [
+      "42°C"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "nd5-002",
+    "query": "NeckD5 有多少种按摩模式？",
+    "expect_doc": "NeckD5",
+    "expect_keywords": [
+      "8 种"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "nd5-003",
+    "query": "NeckD5 热敷一次能开多久？",
+    "expect_doc": "NeckD5",
+    "expect_keywords": [
+      "20 分钟"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5-001",
+    "query": "N5 防水等级是多少？",
+    "expect_doc": "N5",
+    "expect_keywords": [
+      "IPX4"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "n5-002",
+    "query": "N5 电极片多久换一次？",
+    "expect_doc": "N5",
+    "expect_keywords": [
+      "30 次"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id5-001",
+    "query": "iDream 5s 多重？",
+    "expect_doc": "iDream",
+    "expect_keywords": [
+      "680 g"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "id5-002",
+    "query": "iDream 5s 噪音大吗？",
+    "expect_doc": "iDream",
+    "expect_keywords": [
+      "55 dB"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "s4-001",
+    "query": "See 4 能不能连蓝牙放音乐？",
+    "expect_doc": "See 4",
+    "expect_keywords": [
+      "蓝牙"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s4-002",
+    "query": "青光眼患者能用 See 4 吗？",
+    "expect_doc": "See 4",
+    "expect_keywords": [
+      "禁用"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "a3s-001",
+    "query": "Air 3S 腰部按摩仪有几个电机？",
+    "expect_doc": "Air 3S",
+    "expect_keywords": [
+      "2 个"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "a3s-002",
+    "query": "腰突急性期能不能用 Air 3S？",
+    "expect_doc": "Air 3S",
+    "expect_keywords": [
+      "急性期禁用"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "p2-001",
+    "query": "Palm 2 手部按摩仪热敷多少度？",
+    "expect_doc": "Palm 2",
+    "expect_keywords": [
+      "40°C"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "f3-001",
+    "query": "Foot 3 足底有几组滚轮？",
+    "expect_doc": "Foot 3",
+    "expect_keywords": [
+      "3 组"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "f3-002",
+    "query": "糖尿病人能用 Foot 3 吗？",
+    "expect_doc": "Foot 3",
+    "expect_keywords": [
+      "慎用"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "m1-001",
+    "query": "M1 筋膜枪最高转速多少？",
+    "expect_doc": "M1",
+    "expect_keywords": [
+      "3200 rpm"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "m1-002",
+    "query": "M1 带几个按摩头？",
+    "expect_doc": "M1",
+    "expect_keywords": [
+      "4 个"
+    ],
+    "type": "table"
+  },
+  {
+    "id": "m1-003",
+    "query": "M1 能不能打关节？",
+    "expect_doc": "M1",
+    "expect_keywords": [
+      "禁止击打关节"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "as-001",
+    "query": "整机保修多长时间？",
+    "expect_doc": "售后政策",
+    "expect_keywords": [
+      "1 年"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "as-002",
+    "query": "电池保修多久？",
+    "expect_doc": "售后政策",
+    "expect_keywords": [
+      "6 个月"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "as-003",
+    "query": "质量问题多少天内可以换货？",
+    "expect_doc": "售后政策",
+    "expect_keywords": [
+      "15 天"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "fq1-001",
+    "query": "设备开不了机怎么办？",
+    "expect_doc": "FAQ（一）",
+    "expect_keywords": [
+      "充电 30 分钟"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "fq1-002",
+    "query": "按摩没感觉怎么回事？",
+    "expect_doc": "FAQ（一）",
+    "expect_keywords": [
+      "电极片",
+      "皮肤"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "fq1-003",
+    "query": "能不能一边充电一边用？",
+    "expect_doc": "FAQ（一）",
+    "expect_keywords": [
+      "不建议"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "fq2-001",
+    "query": "电极片一般用多久要换？",
+    "expect_doc": "FAQ（二）",
+    "expect_keywords": [
+      "30 次",
+      "30 天"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "fq2-002",
+    "query": "设备能托运上飞机吗？",
+    "expect_doc": "FAQ（二）",
+    "expect_keywords": [
+      "不可托运",
+      "随身携带"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "fq2-003",
+    "query": "怎么清洁设备？",
+    "expect_doc": "FAQ（二）",
+    "expect_keywords": [
+      "干布",
+      "软布"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "adv-001",
+    "query": "N6 mini 的售价是多少？",
+    "expect_doc": "N6 mini",
+    "type": "adversarial",
+    "note": "所有文档都没提价格"
+  },
+  {
+    "id": "adv-002",
+    "query": "NeckD5 有没有灰色款？",
+    "expect_doc": "NeckD5",
+    "type": "adversarial",
+    "note": "文档没提颜色"
+  },
+  {
+    "id": "adv-003",
+    "query": "你们客服电话是多少？",
+    "expect_doc": "售后政策",
+    "type": "adversarial",
+    "note": "售后文档没给电话号码"
+  }
+]

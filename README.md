@@ -1,13 +1,13 @@
 # 企业 RAG 知识库
 
-面向企业内部产品手册与售后 FAQ 的智能问答系统。基于 **pgvector + Elasticsearch 混合检索**、**pi-coding-agent 分支树会话**、**本地 Ollama 私有化部署**，并配套 **Golden QA + Ragas 双层评测体系**。
+面向企业内部产品手册与售后 FAQ 的智能问答系统。基于 **Pi Agent（Agent 层）+ LangChain.js（检索原语）**、**pgvector + Elasticsearch 混合检索**、**火山方舟（豆包 LLM + Doubao Embedding）**，并配套 **Golden QA + Ragas 双层评测体系**。
 
 ## 核心特性
 
 - **混合检索**：向量语义检索（pgvector）+ BM25 关键词检索（Elasticsearch），RRF 融合排序
-- **分支树会话**：基于 pi-coding-agent 的 JSONL 分支会话，支持任意历史节点开分支、编辑消息重答
+- **分支树会话**：基于 Pi Agent 的 JSONL 分支会话，支持任意历史节点开分支、编辑消息重答
 - **文档解析**：PDF 版面分析、表格整体保留切片、扫描页 OCR 兜底
-- **本地部署**：LLM 与 Embedding 均走本地 Ollama，零外部 API 成本
+- **模型层**：LLM 与 Embedding 均接入火山方舟（豆包大模型 + Doubao Embedding）
 - **双层评测**：检索层（Recall@k / MRR / nDCG）+ 生成层（Ragas Faithfulness / Answer Relevancy）
 
 ## 技术栈
@@ -16,7 +16,7 @@
 | -------- | ----------------------------------------------------------------------------- |
 | 前端     | Next.js 16 (Turbopack) + React 19 + Tailwind CSS 4 + assistant-ui              |
 | 后端     | NestJS 11 + Prisma 7                                                          |
-| AI 引擎  | pi-coding-agent + pgvector + Elasticsearch + Ollama                          |
+| AI 引擎  | Agent 层：Pi Agent；检索原语：LangChain.js（PGVectorStore / TextSplitter）；模型：火山方舟（豆包 LLM + Doubao Embedding） |
 | 评测     | Ragas (LLM-as-judge) + 自建 Golden QA 评测集                                   |
 | 数据库   | PostgreSQL 17 + pgvector                                                      |
 | 构建工具 | pnpm workspace + tsup + oxlint/oxfmt                                          |
@@ -78,7 +78,7 @@ enterprise-rag-kb/
 - Node.js >= 20
 - pnpm >= 9
 - Docker（用于运行 PostgreSQL / Elasticsearch）
-- Ollama（本地部署，模型：`qwen3.5:0.8b` + `qwen3-embedding:0.6b`）
+- 火山方舟 API Key（[申请地址](https://www.volcengine.com/ark)，需开通豆包大模型与 Doubao Embedding）
 
 ## 快速开始
 
@@ -95,9 +95,11 @@ pnpm install
 ```env
 DATABASE_URL=postgresql://root:chenjiang@localhost:5433/langchain_rag
 ES_URL=http://localhost:9200
-LLM_PROVIDER=ollama
-EMBEDDING_PROVIDER=ollama
-EMBEDDING_BASE_URL=http://127.0.0.1:11434
+LLM_PROVIDER=ark
+ARK_API_KEY=your-ark-api-key
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+EMBEDDING_PROVIDER=ark
+EMBEDDING_MODEL=doubao-embedding-text-240715
 JWT_SECRET=your-jwt-secret
 ```
 
@@ -111,10 +113,6 @@ docker compose -f docker/docker-compose.yml up -d
 docker run -d --name rag-elasticsearch -p 9200:9200 \
   -e "discovery.type=single-node" -e "xpack.security.enabled=false" \
   docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-
-# Ollama（确保 127.0.0.1:11434 可访问）
-ollama pull qwen3.5:0.8b
-ollama pull qwen3-embedding:0.6b
 ```
 
 ### 4. 初始化数据库

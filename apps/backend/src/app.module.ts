@@ -1,3 +1,6 @@
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { JwtAuthGuard } from "./auth/jwt-auth.guard";
+import { TaskContextInterceptor } from "./auth/task-context.interceptor";
 import { Module } from "@nestjs/common";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { AppController } from "./app.controller";
@@ -27,6 +30,6 @@ import { EventsGateway } from "./task/events.gateway";
   ],
   controllers: [AppController, EventsController],
   // EventsGateway 同时承担结构化日志 + SSE 多播（原 TaskListener 职责已合并）
-  providers: [AppService, EventsGateway],
+  providers: [AppService, EventsGateway, { provide: APP_GUARD, useClass: JwtAuthGuard }, { provide: APP_INTERCEPTOR, useClass: TaskContextInterceptor }],
 })
 export class AppModule {}

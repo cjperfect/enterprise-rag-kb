@@ -65,6 +65,10 @@ export const SyntaxHighlighter: FC<HighlighterProps> = ({
   components: _components,
   ...options
 }) => {
+  void _addDefaultStyles;
+  void _showLanguage;
+  void _node;
+  void _components;
   const aui = useAui();
   const hasPart = aui.part.source !== null;
   const isStreaming = useAuiState((s) => hasPart && s.part.status.type === "running");

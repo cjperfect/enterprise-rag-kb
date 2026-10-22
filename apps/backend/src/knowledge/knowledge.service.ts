@@ -1,7 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import { ragService } from "@enterprise-rag-kb/ai-engine";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { Exceptions } from "../common/exceptions/business.exception";
-import { CommonStatus } from "@langchain-rag/shared";
+import { CommonStatus } from "@enterprise-rag-kb/shared";
 import type { CreateKnowledgeBaseDto, UpdateKnowledgeBaseDto } from "./dto/knowledge.dto";
 
 /**
@@ -12,6 +13,7 @@ import type { CreateKnowledgeBaseDto, UpdateKnowledgeBaseDto } from "./dto/knowl
  */
 @Injectable()
 export class KnowledgeService {
+  private readonly logger = new Logger(KnowledgeService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   // ==========================================================================
@@ -20,6 +22,7 @@ export class KnowledgeService {
 
   /** 创建知识库 */
   async create(userId: number, dto: CreateKnowledgeBaseDto) {
+    if (typeof dto?.name !== "string" || !dto.name.trim() || dto.name.length > 255) throw new BadRequestException("知识库名称须为 1~255 字符");
     return this.prisma.knowledgeBase.create({
       data: {
         userId,
@@ -38,15 +41,16 @@ export class KnowledgeService {
   }
 
   /** 获取单个知识库 */
-  async get(id: number) {
-    const kb = await this.prisma.knowledgeBase.findUnique({ where: { id } });
+  async get(id: number, userId: number) {
+    const kb = await this.prisma.knowledgeBase.findFirst({ where: { id, userId, status: { in: [CommonStatus.NORMAL, CommonStatus.ARCHIVED] } } });
     if (!kb) throw Exceptions.notFound("知识库不存在");
     return kb;
   }
 
   /** 更新知识库 */
   async update(id: number, userId: number, dto: UpdateKnowledgeBaseDto) {
-    await this.get(id); // 确保存在
+    await this.get(id, userId); // 确保存在
+    if (dto.name !== undefined && (typeof dto.name !== "string" || !dto.name.trim() || dto.name.length > 255)) throw new BadRequestException("知识库名称须为 1~255 字符");
     return this.prisma.knowledgeBase.update({
       where: { id },
       data: {
@@ -58,21 +62,25 @@ export class KnowledgeService {
 
   /** 软删除知识库（级联软删文档） */
   async delete(id: number, userId: number) {
-    await this.get(id);
-    // 级联软删文档
-    await this.prisma.knowledgeDocument.updateMany({
-      where: { knowledgeBaseId: id },
-      data: { status: CommonStatus.DELETED },
+    await this.get(id, userId);
+    const documents = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM knowledge_base WHERE id = ${id} FOR UPDATE`;
+      const docs = await tx.knowledgeDocument.findMany({ where: { knowledgeBaseId: id }, select: { id: true } });
+      await tx.knowledgeDocument.updateMany({ where: { knowledgeBaseId: id }, data: { status: CommonStatus.DELETED, chunkCount: 0 } });
+      await tx.knowledgeChunk.deleteMany({ where: { kbId: id } });
+      await tx.chatConversation.updateMany({ where: { knowledgeId: id }, data: { status: CommonStatus.DELETED } });
+      await tx.knowledgeBase.update({ where: { id }, data: { status: CommonStatus.DELETED, documentCount: 0, chunkCount: 0 } });
+      return docs;
     });
-    // 级联软删该知识库下的所有会话
-    await this.prisma.chatConversation.updateMany({
-      where: { knowledgeId: id },
-      data: { status: CommonStatus.DELETED },
-    });
-    return this.prisma.knowledgeBase.update({
-      where: { id },
-      data: { status: CommonStatus.DELETED },
-    });
+    // 软删除先提交；外部服务故障不能让已删除内容继续被召回。
+    for (const doc of documents) {
+      try {
+        await ragService.deleteByDocumentId(doc.id);
+      } catch (error) {
+        this.logger.warn(`知识库 ${id} 的文档 ${doc.id} 索引清理失败: ${String(error)}`);
+      }
+    }
+    return { id, status: CommonStatus.DELETED };
   }
 
   // ==========================================================================
@@ -81,7 +89,7 @@ export class KnowledgeService {
 
   /** 获取知识库下的文档列表 */
   async getDocuments(kbId: number, userId: number) {
-    await this.get(kbId);
+    await this.get(kbId, userId);
     return this.prisma.knowledgeDocument.findMany({
       where: {
         knowledgeBaseId: kbId,

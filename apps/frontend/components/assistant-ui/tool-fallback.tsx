@@ -286,7 +286,7 @@ function ToolFallbackApproval({
   const respond = (approved: boolean) => {
     if (submitted) return;
     if (approval != null && approval.approved === undefined && respondToApproval) {
-      respondToApproval({ approved });
+      void respondToApproval({ approved }).catch((error: unknown) => console.error("审批响应失败", error));
     } else if (interrupt) {
       resume?.({ approved });
     } else {
@@ -297,7 +297,7 @@ function ToolFallbackApproval({
 
   const respondWithOption = (option: ToolApprovalOption) => {
     if (submitted) return;
-    respondToApproval?.({ optionId: option.id });
+    void respondToApproval?.({ optionId: option.id }).catch((error: unknown) => console.error("审批响应失败", error));
     setSubmitted(true);
     setConfirmingId(null);
   };

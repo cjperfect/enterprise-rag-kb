@@ -1,5 +1,5 @@
 import { HttpException } from "@nestjs/common";
-import { ErrorCode } from "@langchain-rag/shared";
+import { ErrorCode } from "@enterprise-rag-kb/shared";
 
 export class BusinessException extends HttpException {
   constructor(code: ErrorCode, message: string) {

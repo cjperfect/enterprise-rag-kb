@@ -1,16 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
 import type { EmbeddingsInterface } from "@langchain/core/embeddings";
 import { Document } from "@langchain/core/documents";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { defaultEmbeddings } from "../embeddings";
-import type { ChunkData, ChunkMetadata, RagMatchType, RagSearchResult } from "../interfaces/rag";
+import type { ChunkData, ChunkMetadata, RagMatchType, RagSearchResult, PreparedIndex, ActiveDocument } from "../interfaces/rag";
 import { RAG_TABLE_NAME, RAG_EMBEDDING_DIMENSIONS } from "../constants/rag";
 import { lexicalIndex } from "./bm25";
 import { rewriteQuery } from "./query-rewrite";
 import { emit, withTaskEvents, TaskEvent, TaskType } from "../events";
 import { normalizeParsedText } from "../loaders/extract";
 
-export type { ChunkData, RagSearchResult, RagMatchType };
+export type { ChunkData, RagSearchResult, RagMatchType, PreparedIndex };
 
 /** RRF（Reciprocal Rank Fusion）常数：弱化头部名次差距，业界惯用 60 */
 const RRF_K = 60;
@@ -28,6 +29,7 @@ const RRF_K = 60;
 export class RagService {
   private vectorStore: PGVectorStore | null = null;
   private embeddings: EmbeddingsInterface;
+  private storeReady?: Promise<PGVectorStore>;
 
   constructor(embeddings?: EmbeddingsInterface) {
     this.embeddings = embeddings ?? defaultEmbeddings;
@@ -52,28 +54,61 @@ export class RagService {
       scoreNormalization: "similarity" as const,
     };
 
-    this.vectorStore = await PGVectorStore.initialize(this.embeddings, {
+    this.storeReady ??= PGVectorStore.initialize(this.embeddings, {
       ...config,
       dimensions: RAG_EMBEDDING_DIMENSIONS,
     });
-    // 词法索引接 ES（倒排 + BM25 + IK 分词，见 bm25.ts）
-    lexicalIndex.attach();
+    try {
+      this.vectorStore = await this.storeReady;
+    } catch (error) {
+      this.storeReady = undefined;
+      throw error;
+    }
     return this.vectorStore;
   }
 
-  /**
-   * 索引文档：切片 + 向量化，返回切片数据供后端写 DB
-   *
-   * @param kbId 知识库 ID
-   * @param documentId 文档 ID
-   * @param content 文档全文
-   * @param names 知识库名称 / 文档文件名（存入 vector metadata，检索时直接返回）
-   * @param taskId 可选：外层任务已存在时复用其 taskId（跳过 started/completed 生命周期，
-   *               只发 progress），避免「上传」外层任务与「索引」内层任务嵌套成两个 taskId、
-   *               前端按第一个锚定后丢掉内层事件
-   * @param stepOffset 步骤起始编号（外层任务已用掉 step1/2 时从 3 开始）
-   * @returns 切片列表（含序号和 token 估算）
-   */
+  /** 暂存新索引；只有 DB 中的 index_revision 切换后才对检索可见。 */
+  async prepareDocument(
+    kbId: number,
+    documentId: number,
+    content: string,
+    names?: { kbName?: string; documentName?: string },
+    taskId?: string,
+    stepOffset = 1,
+  ): Promise<PreparedIndex> {
+    const revision = randomUUID();
+    const run = async (tid: string): Promise<PreparedIndex> => {
+      const texts = await splitTextToChunks(normalizeParsedText(content, true), { preserveTables: true });
+      if (texts.length === 0) throw new Error("文档没有可索引的文本");
+      emit(TaskEvent.PROGRESS, { taskId: tid, taskType: TaskType.DOCUMENT_INDEX, step: stepOffset, message: `切片完成（${texts.length} 片），开始向量化` });
+      try {
+        const store = await this.getStore();
+        await store.addDocuments(
+          texts.map(
+            (text, i) =>
+              new Document({
+                pageContent: text,
+                metadata: { documentId, kbId, chunkIndex: i + 1, revision, ...names } satisfies ChunkMetadata,
+              }),
+          ),
+        );
+        await lexicalIndex.addChunks(
+          kbId,
+          documentId,
+          { ...names, revision },
+          texts.map((content, i) => ({ content, index: i + 1 })),
+        );
+        emit(TaskEvent.PROGRESS, { taskId: tid, taskType: TaskType.DOCUMENT_INDEX, step: stepOffset + 1, message: "向量化完成" });
+        return { revision, chunks: texts.map((content, i) => ({ content, index: i + 1, tokenCount: Math.ceil(content.length / 2) })) };
+      } catch (error) {
+        await this.discardRevision(documentId, revision);
+        throw error;
+      }
+    };
+    return taskId ? run(taskId) : withTaskEvents(TaskType.DOCUMENT_INDEX, { kbId, documentId }, run);
+  }
+
+  /** 独立脚本兼容入口；后端应 prepareDocument 后在同一个事务内写切片与激活版本。 */
   async indexDocument(
     kbId: number,
     documentId: number,
@@ -82,27 +117,19 @@ export class RagService {
     taskId?: string,
     stepOffset = 1,
   ): Promise<ChunkData[]> {
-    if (taskId) {
-      return this.vectorize(kbId, documentId, content, names, taskId, stepOffset);
+    const prepared = await this.prepareDocument(kbId, documentId, content, names, taskId, stepOffset);
+    try {
+      const store = await this.getStore();
+      const result = await store.pool.query("UPDATE knowledge_document SET index_revision = $1 WHERE id = $2 AND status IN (1, 2)", [prepared.revision, documentId]);
+      if (!result.rowCount) throw new Error("文档不存在或已删除");
+      return prepared.chunks;
+    } catch (error) {
+      await this.discardRevision(documentId, prepared.revision);
+      throw error;
     }
-    return withTaskEvents(TaskType.DOCUMENT_INDEX, { kbId, documentId, message: `索引文档 #${documentId}` }, (tid) =>
-      this.vectorize(kbId, documentId, content, names, tid, stepOffset),
-    );
   }
 
-  /**
-   * 重建索引（编辑保存专用）：删除旧向量 → 内容就绪 → 数据清洗 → 重新切片 → 重新向量化
-   *
-   * 事件序列与前端 5 步条（重建索引/数据清洗/切片/向量化/完成）一一对应：
-   *   step(offset)     重建索引：删除旧向量
-   *   step(offset+1)   数据清洗完成（CRLF / BOM 归一）
-   *   step(offset+2)   切片完成（vectorize 发出）
-   *   step(offset+3)   向量化完成（vectorize 发出）
-   *
-   * 编辑内容来自编辑器（非文件），无需「解析」步骤；与新建链路（createDocument）
-   * 保持同一套步骤语义（数据清洗/切片/向量化/完成），仅多出「重建索引」第一步；
-   * 编辑内容同样走 normalizeParsedText 统一清洗，保证进入切片前的格式一致。
-   */
+  /** 保留旧版本直到新版本成功激活。 */
   async reindexDocument(
     documentId: number,
     kbId: number,
@@ -111,147 +138,91 @@ export class RagService {
     taskId?: string,
     stepOffset = 1,
   ): Promise<ChunkData[]> {
-    // 编辑内容统一清洗（幂等；若调用方已清洗则此处无副作用）
-    const cleaned = normalizeParsedText(content, true);
+    return this.indexDocument(kbId, documentId, content, names, taskId, stepOffset);
+  }
 
-    if (taskId) {
-      await this.deleteByDocumentId(documentId);
-      emit(TaskEvent.PROGRESS, { taskId, taskType: TaskType.DOCUMENT_INDEX, step: stepOffset, message: "重建索引：删除旧向量" });
-      emit(TaskEvent.PROGRESS, { taskId, taskType: TaskType.DOCUMENT_INDEX, step: stepOffset + 1, message: "数据清洗完成（CRLF / BOM 归一），开始切片与向量化" });
-      return this.vectorize(kbId, documentId, cleaned, names, taskId, stepOffset + 2);
+  /** 清理失败的暂存版本；清理故障不会覆盖原始错误。 */
+  async discardRevision(documentId: number, revision: string): Promise<void> {
+    const results = await Promise.allSettled([this.deleteVectorRevision(documentId, revision), lexicalIndex.deleteByDocumentId(documentId, revision)]);
+    for (const result of results) {
+      if (result.status === "rejected") console.warn("暂存索引清理失败，版本仍不可检索", result.reason);
     }
-    return withTaskEvents(TaskType.DOCUMENT_INDEX, { kbId, documentId, message: `重建索引文档 #${documentId}` }, async (tid) => {
-      await this.deleteByDocumentId(documentId);
-      emit(TaskEvent.PROGRESS, { taskId: tid, taskType: TaskType.DOCUMENT_INDEX, step: 1, message: "重建索引：删除旧向量" });
-      emit(TaskEvent.PROGRESS, { taskId: tid, taskType: TaskType.DOCUMENT_INDEX, step: 2, message: "数据清洗完成（CRLF / BOM 归一），开始切片与向量化" });
-      return this.vectorize(kbId, documentId, cleaned, names, tid, 3);
-    });
   }
 
-  /**
-   * 切片 + 向量化核心逻辑（不发 started/completed，由 withTaskEvents 统一发）
-   *
-   * @param taskId 任务 ID（用于发进度事件）
-   * @param stepOffset 步骤偏移（重建索引时前面多了"删旧向量"一步）
-   */
-  private async vectorize(
-    kbId: number,
-    documentId: number,
-    content: string,
-    names: { kbName?: string; documentName?: string } | undefined,
-    taskId: string,
-    stepOffset = 1,
-  ): Promise<ChunkData[]> {
-    // preserveTables：解析产物里 [表格] 标记的 GFM 表格块整体保留为 1 片，
-    // 不被 RecursiveCharacterTextSplitter 按行切断（否则表格行列结构被打散，检索/展示都失真）
-    const texts = await splitTextToChunks(content, { preserveTables: true });
-    if (texts.length === 0) return [];
-
-    emit(TaskEvent.PROGRESS, { taskId, taskType: TaskType.DOCUMENT_INDEX, step: stepOffset, message: `切片完成（${texts.length} 片），开始向量化` });
-
+  private async deleteVectorRevision(documentId: number, revision?: string): Promise<void> {
     const store = await this.getStore();
-
-    const docs = texts.map(
-      (text, i) =>
-        new Document({
-          pageContent: text,
-          metadata: {
-            documentId,
-            kbId,
-            chunkIndex: i + 1,
-            kbName: names?.kbName,
-            documentName: names?.documentName,
-          } satisfies ChunkMetadata,
-        }),
-    );
-
-    await store.addDocuments(docs);
-
-    // 向量与词法索引同步写入（rag_bm25_index 旁表，供 BM25 检索）
-    await lexicalIndex.addChunks(
-      kbId,
-      documentId,
-      { kbName: names?.kbName, documentName: names?.documentName },
-      texts.map((text, i) => ({ content: text, index: i + 1 })),
-    );
-
-    emit(TaskEvent.PROGRESS, { taskId, taskType: TaskType.DOCUMENT_INDEX, step: stepOffset + 1, message: "向量化完成" });
-
-    return texts.map((text, i) => ({
-      content: text,
-      index: i + 1,
-      tokenCount: Math.ceil(text.length / 2),
-    }));
+    await store.delete({ filter: { documentId, ...(revision ? { revision } : {}) } });
   }
 
-  /**
-   * 检索（统一混合模式：向量语义 + ES BM25 词法，RRF 融合）
-   *
-   * 两路各取候选，用 RRF 融合排名 —— rank 求和不用原始分，
-   * 天然规避"余弦分 0~1 与 BM25 分无上界"不可比的问题。
-   * 语义路长于近似匹配（"如何请假" 命中 "休假申请流程"），
-   * 词法路长于精确词（型号、错误码、人名等专有名词），两路互补。
-   *
-   * @param query 用户问题
-   * @param options.kbIds 限制在指定知识库
-   * @param options.k top-K
-   */
-  async search(query: string, options: { kbIds?: number[]; k?: number } = {}): Promise<RagSearchResult[]> {
-    const { kbIds, k = 5 } = options;
-    // 每路多召回一些候选再融合，比各路只取 top-k 融合效果好
+  /** 在召回之前过滤删除、失败文档和非活跃版本，避免旧切片挤占 top-k。 */
+  private async activeDocuments(kbIds?: number[]): Promise<ActiveDocument[]> {
+    const store = await this.getStore();
+    const result = await store.pool.query<ActiveDocument>(
+      `
+      SELECT d.id, COALESCE(d.index_revision, '') AS revision
+      FROM knowledge_document d JOIN knowledge_base kb ON kb.id = d.knowledge_base_id
+      WHERE d.status IN (1, 2) AND kb.status IN (1, 2)
+        AND ($1::int[] IS NULL OR kb.id = ANY($1::int[]))`,
+      [kbIds ?? null],
+    );
+    return result.rows;
+  }
+
+  async search(query: string, options: { kbIds?: number[]; k?: number; mode?: "hybrid" | "semantic" | "keyword" } = {}): Promise<RagSearchResult[]> {
+    const { kbIds, k = 5, mode = "hybrid" } = options;
+    if (!query.trim() || (kbIds && !kbIds.length)) return [];
+    if (!Number.isInteger(k) || k < 1 || k > 100) throw new Error("k 必须为 1~100 的整数");
     const fetchK = Math.max(k * 2, 10);
-
     return withTaskEvents(TaskType.RAG_SEARCH, { kbIds, message: `检索：${query.slice(0, 50)}` }, async () => {
-      // 先确保 PGVectorStore 已初始化（词法索引也由它顺带 attach）
-      await this.getStore();
-
-      // Query 改写：把口语化问题优化成更适合检索的形式（开关 QUERY_REWRITE_ENABLED）
-      // 失败/关闭时静默 fallback 原 query，不影响主流程
+      const active = await this.activeDocuments(kbIds);
+      if (!active.length) return [];
       const { rewritten } = await rewriteQuery(query);
-      const searchQuery = rewritten;
-
-      const lists: RagSearchResult[][] = [
-        await this.semanticSearch(searchQuery, kbIds, fetchK),
-        await lexicalIndex.search(searchQuery, { kbIds, k: fetchK }),
-      ];
+      const requests = [];
+      if (mode !== "keyword") requests.push(this.semanticSearch(rewritten, active, fetchK));
+      if (mode !== "semantic") requests.push(lexicalIndex.search(rewritten, { kbIds, k: fetchK, active }));
+      const settled = await Promise.allSettled(requests);
+      const lists: RagSearchResult[][] = [];
+      for (const result of settled) {
+        if (result.status === "fulfilled") lists.push(result.value);
+        else console.warn("检索单路失败", result.reason);
+      }
+      if (!lists.length) throw new Error("向量与关键词检索均不可用，请稍后重试");
       return fuseRrf(lists, k);
     });
   }
 
-  /** 向量相似度检索 */
-  private async semanticSearch(query: string, kbIds: number[] | undefined, k: number): Promise<RagSearchResult[]> {
+  private async semanticSearch(query: string, active: ActiveDocument[], k: number): Promise<RagSearchResult[]> {
     const store = await this.getStore();
-
-    const filter = kbIds && kbIds.length > 0 ? { kbId: { in: kbIds } } : undefined;
-
-    // PGVectorStore 的 filter 类型对 { in: number[] } 形式不友好，沿用原作者的单层 as any 旁路
-    const results = await store.similaritySearchWithScore(query, k, filter);
-
-    return results.map(([doc, score]) => {
-      const metadata = doc.metadata as unknown as ChunkMetadata;
-      return {
-        content: doc.pageContent,
-        documentId: metadata.documentId,
-        kbId: metadata.kbId,
-        kbName: metadata.kbName,
-        documentName: metadata.documentName,
-        chunkIndex: metadata.chunkIndex,
-        score,
-        matchType: "semantic" as const,
-      } satisfies RagSearchResult;
-    });
+    const vector = await this.embeddings.embedQuery(query);
+    const result = await store.pool.query<{ content: string; metadata: ChunkMetadata; score: number }>(
+      `
+      SELECT v.content, v.metadata, 1 - (v.embedding <=> $1::vector) AS score
+      FROM ${RAG_TABLE_NAME} v
+      JOIN jsonb_to_recordset($2::jsonb) AS a(id int, revision text)
+        ON v.metadata->>'documentId' = a.id::text
+        AND COALESCE(v.metadata->>'revision', '') = a.revision
+      ORDER BY v.embedding <=> $1::vector LIMIT $3`,
+      [JSON.stringify(vector), JSON.stringify(active), k],
+    );
+    return result.rows.map(({ content, metadata, score }) => ({
+      content,
+      ...metadata,
+      score,
+      matchType: "semantic" as const,
+    }));
   }
 
-  /**
-   * 删除某个文档的所有索引（向量 + BM25 词法）
-   *
-   * PGVectorStore 通过 metadata 过滤删除
-   */
+  /** 独立评测结束时释放连接。 */
+  async close(): Promise<void> {
+    await Promise.all([this.vectorStore?.end(), lexicalIndex.close()]);
+    this.vectorStore = null;
+    this.storeReady = undefined;
+  }
+
   async deleteByDocumentId(documentId: number): Promise<void> {
-    const store = await this.getStore();
-    // PGVectorStore 支持通过 metadata filter 删除
-    await store.delete({ filter: { documentId } });
-    await lexicalIndex.deleteByDocumentId(documentId);
+    const results = await Promise.allSettled([this.deleteVectorRevision(documentId), lexicalIndex.deleteByDocumentId(documentId)]);
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length) throw new Error("部分索引清理失败，可重试清理");
   }
 }
 
@@ -320,23 +291,22 @@ export interface SplitOptions {
  * 假阳性保护：连续 `|` 行收集到的候选块，只有至少含一行 GFM 分隔行时才确认为表格；
  * 否则（正文偶然一行带竖线）退回普通文本。
  */
-function extractTableBlocks(text: string): { tableBlocks: string[]; textBlocks: string[] } {
+function extractTableBlocks(text: string): Array<{ text: string; table: boolean }> {
   const lines = text.split("\n");
-  const tableBlocks: string[] = [];
-  const textBlocks: string[] = [];
+  const blocks: Array<{ text: string; table: boolean }> = [];
   let current: string[] = [];
   let table: string[] = [];
   let inTable = false;
 
   const flushText = () => {
     if (current.length) {
-      textBlocks.push(current.join("\n"));
+      blocks.push({ text: current.join("\n"), table: false });
       current = [];
     }
   };
   const flushTable = () => {
     if (table.length) {
-      tableBlocks.push(table.join("\n"));
+      blocks.push({ text: table.join("\n"), table: true });
       table = [];
     }
   };
@@ -344,8 +314,7 @@ function extractTableBlocks(text: string): { tableBlocks: string[]; textBlocks: 
   // 行首是 |（允许前导空白）—— GFM 表格行的外观特征
   const isTableLine = (line: string) => /^\s*\|/.test(line);
   // GFM 分隔行：| --- | :---: | ---: | —— 去掉 |/空白/冒号/横杠/点后应为空
-  const isTableSeparator = (line: string) =>
-    isTableLine(line) && /-/.test(line) && line.trim().replace(/[|\s:.-]/g, "").length === 0;
+  const isTableSeparator = (line: string) => isTableLine(line) && /-/.test(line) && line.trim().replace(/[|\s:.-]/g, "").length === 0;
   // 候选块是否真表格：至少 2 行且含分隔行
   const isRealTable = (block: string[]) => block.length >= 2 && block.some((l) => isTableSeparator(l));
 
@@ -390,7 +359,7 @@ function extractTableBlocks(text: string): { tableBlocks: string[]; textBlocks: 
   }
   if (inTable) closeTable();
   flushText();
-  return { tableBlocks, textBlocks };
+  return blocks;
 }
 
 /**
@@ -402,10 +371,9 @@ function extractTableBlocks(text: string): { tableBlocks: string[]; textBlocks: 
  */
 export async function splitTextToChunks(text: string, options?: SplitOptions): Promise<string[]> {
   if (options?.preserveTables) {
-    const { tableBlocks, textBlocks } = extractTableBlocks(text);
-    const chunks: string[] = [...tableBlocks];
-    for (const block of textBlocks) {
-      chunks.push(...(await splitTextInternal(block)));
+    const chunks: string[] = [];
+    for (const block of extractTableBlocks(text)) {
+      chunks.push(...(block.table ? [block.text] : await splitTextInternal(block.text)));
     }
     return chunks.filter(Boolean);
   }
@@ -417,8 +385,10 @@ async function splitTextInternal(text: string): Promise<string[]> {
   // 切片参数环境变量化：默认 350/40（中文 QA 场景实测最优）；
   // 评测时可通过 CHUNK_SIZE / CHUNK_OVERLAP 跑参数网格，不用改代码。
   // 注意：改这两个值需要重建索引（chunk 内容变了），旧向量不兼容。
-  const chunkSize = Number(process.env.CHUNK_SIZE) || 350;
-  const chunkOverlap = Number(process.env.CHUNK_OVERLAP) || 40;
+  const chunkSize = Number(process.env.CHUNK_SIZE ?? 350);
+  const chunkOverlap = Number(process.env.CHUNK_OVERLAP ?? 40);
+  if (!Number.isInteger(chunkSize) || chunkSize < 1 || !Number.isInteger(chunkOverlap) || chunkOverlap < 0 || chunkOverlap >= chunkSize)
+    throw new Error("切片参数无效：须满足 0 <= CHUNK_OVERLAP < CHUNK_SIZE");
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize,
     chunkOverlap,

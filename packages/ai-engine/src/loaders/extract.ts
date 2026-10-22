@@ -41,6 +41,8 @@ export async function parseDocument(filePath: string): Promise<{ fileType: strin
     case "pdf":
       docs = await loadPdf(filePath, { splitPages: false });
       break;
+    case "txt":
+    case "markdown":
     case "md":
       docs = await loadMarkdown(filePath);
       break;

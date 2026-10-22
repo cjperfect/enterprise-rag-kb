@@ -17,10 +17,11 @@ const speechAdapter = new WebSpeechDictationAdapter();
 export const Assistant = () => {
   const runtime = useRemoteThreadListRuntime({
     adapter: remoteThreadListAdapter,
-    runtimeHook: () =>
-      useLocalRuntime(chatAdapter, {
+    runtimeHook: function useThreadRuntime() {
+      return useLocalRuntime(chatAdapter, {
         adapters: { dictation: speechAdapter },
-      }),
+      });
+    },
   });
 
   return (

@@ -7,7 +7,7 @@
  */
 
 import axios from "axios";
-import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from "axios";
+import type { AxiosError, AxiosResponse } from "axios";
 
 const BASE_URL = "/api";
 
@@ -16,15 +16,8 @@ export const http = axios.create({
   // 解析 PDF 含 Unstructured 云 + 图片语义化，单次接口实测可到 30s+；
   // 5 分钟兜底覆盖多页/大文件慢解析，避免 axios 先于后端返回超时。
   timeout: 300_000,
+  withCredentials: true,
   headers: { "Content-Type": "application/json" },
-});
-
-http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  // TODO: 后续接入 JWT 后从 localStorage 取 token 注入
-  // const token = localStorage.getItem("token");
-  // if (token) config.headers.Authorization = `Bearer ${token}`;
-
-  return config;
 });
 
 http.interceptors.response.use(
@@ -41,6 +34,7 @@ http.interceptors.response.use(
     return response;
   },
   (error: AxiosError<{ code?: number; message?: string }>) => {
+    if (error.response?.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("rag:unauthorized"));
     const msg = error.response?.data?.message || error.message || "网络错误";
     return Promise.reject(new Error(msg));
   },

@@ -86,6 +86,8 @@ export interface DocumentChunk {
 
 /** 知识库管理页整体状态 */
 export interface PageState {
+  /** API 操作失败提示 */
+  error: string;
   /** 知识库列表 */
   allKbs: KnowledgeBase[];
   /** 知识库列表是否加载中 */
@@ -149,7 +151,7 @@ export interface DocumentListProps {
   /** 选中文档回调 */
   onSelect: (doc: KnowledgeBaseDocument) => void;
   /** 删除文档回调 */
-  onDelete: (doc: KnowledgeBaseDocument) => void;
+  onDelete: (doc: KnowledgeBaseDocument) => void | Promise<void>;
   /** 是否加载中 */
   loading: boolean;
 }

@@ -41,12 +41,12 @@ export type ReasoningRootProps = Omit<React.ComponentProps<typeof Collapsible>, 
 
 function ReasoningRoot({ className, variant, open: controlledOpen, onOpenChange: controlledOnOpenChange, defaultOpen = false, streaming, children, ...props }: ReasoningRootProps) {
   const collapsibleRef = useRef<HTMLDivElement>(null);
-  const initialOpenRef = useRef(defaultOpen);
+  const [initialOpen] = useState(defaultOpen);
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const lockScroll = useScrollLock(collapsibleRef, ANIMATION_DURATION);
 
   const isControlled = controlledOpen !== undefined;
-  const isOpen = isControlled ? controlledOpen : (userOpen ?? streaming ?? initialOpenRef.current);
+  const isOpen = isControlled ? controlledOpen : (userOpen ?? streaming ?? initialOpen);
   const isAutoMode = isControlled || userOpen === null;
   const isPreview = streaming === true && isOpen && isAutoMode;
 

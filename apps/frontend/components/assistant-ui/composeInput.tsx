@@ -16,11 +16,22 @@ export function ComposerInput() {
 
   useEffect(() => {
     if (!enableMentions) return;
-    (async () => {
-      const kbs = await getKnowledgeBases();
-      setKnowledgeBases(kbs);
-      knowledgeBaseRegistry.setAll(kbs);
-    })();
+    let active = true;
+    async function load() {
+      try {
+        const kbs = await getKnowledgeBases();
+        if (active) {
+          setKnowledgeBases(kbs);
+          knowledgeBaseRegistry.setAll(kbs);
+        }
+      } catch (error) {
+        console.error("加载知识库失败", error);
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+    };
   }, [enableMentions]);
 
   // @ 提及配置 — 选择知识库

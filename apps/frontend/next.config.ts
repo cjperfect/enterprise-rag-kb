@@ -18,13 +18,13 @@ const nextConfig: NextConfig = {
     proxyTimeout: 120_000,
   },
 
-  async rewrites() {
-    return [
+  rewrites() {
+    return Promise.resolve([
       {
         source: "/api/:path*",
         destination: `${BACKEND_URL}/api/:path*`,
       },
-    ];
+    ]);
   },
 };
 

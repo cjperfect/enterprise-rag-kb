@@ -1,13 +1,9 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, ParseIntPipe } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, ParseIntPipe } from "@nestjs/common";
 import { ConversationService } from "./conversation.service";
 import type { CreateConversationDto, UpdateConversationDto, GenerateTitleDto } from "./dto/conversation.dto";
-// TODO: 临时跳过登录校验
-// import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 
 @Controller("api/conversations")
-// TODO: 临时跳过登录校验
-// @UseGuards(JwtAuthGuard)
 export class ConversationController {
   constructor(private readonly conversationService: ConversationService) {}
 
@@ -22,22 +18,22 @@ export class ConversationController {
   }
 
   @Get(":id")
-  async get(@Param("id", ParseIntPipe) id: number) {
-    return this.conversationService.get(id);
+  async get(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: { id: number }) {
+    return this.conversationService.get(id, user.id);
   }
 
   @Patch(":id")
-  async update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateConversationDto) {
-    return this.conversationService.update(id, dto);
+  async update(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: { id: number }, @Body() dto: UpdateConversationDto) {
+    return this.conversationService.update(id, user.id, dto);
   }
 
   @Delete(":id")
-  async delete(@Param("id", ParseIntPipe) id: number) {
-    return this.conversationService.delete(id);
+  async delete(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: { id: number }) {
+    return this.conversationService.delete(id, user.id);
   }
 
   @Post(":id/generate-title")
-  async generateTitle(@Param("id", ParseIntPipe) id: number, @Body() dto: GenerateTitleDto) {
-    return this.conversationService.generateTitle(id, dto);
+  async generateTitle(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: { id: number }, @Body() dto: GenerateTitleDto) {
+    return this.conversationService.generateTitle(id, user.id, dto);
   }
 }

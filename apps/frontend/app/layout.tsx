@@ -1,3 +1,4 @@
+import AuthGate from "@/components/auth-gate";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -26,7 +27,9 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          <AuthGate>{children}</AuthGate>
+        </TooltipProvider>
       </body>
     </html>
   );

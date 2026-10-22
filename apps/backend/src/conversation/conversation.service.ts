@@ -2,8 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { Prisma } from "@prisma/client";
 import { Exceptions } from "../common/exceptions/business.exception";
-import { CommonStatus } from "@langchain-rag/shared";
-import { AiEngine } from "@langchain-rag/ai-engine";
+import { CommonStatus } from "@enterprise-rag-kb/shared";
+import { AiEngine } from "@enterprise-rag-kb/ai-engine";
 import type { CreateConversationDto, UpdateConversationDto, GenerateTitleDto } from "./dto/conversation.dto";
 
 @Injectable()
@@ -14,6 +14,10 @@ export class ConversationService {
 
   /** 创建新会话 */
   async create(userId: number, dto: CreateConversationDto) {
+    if (dto.knowledgeId != null) {
+      const kb = await this.prisma.knowledgeBase.findFirst({ where: { id: dto.knowledgeId, userId, status: { in: [1, 2] } } });
+      if (!kb) throw Exceptions.notFound("知识库不存在");
+    }
     return this.prisma.chatConversation.create({
       data: {
         userId,
@@ -55,17 +59,17 @@ export class ConversationService {
   }
 
   /** 获取单个会话 */
-  async get(conversationId: number) {
-    const conv = await this.prisma.chatConversation.findUnique({
-      where: { id: Number(conversationId) },
+  async get(conversationId: number, userId: number) {
+    const conv = await this.prisma.chatConversation.findFirst({
+      where: { id: Number(conversationId), userId, status: { in: [1, 2] } },
     });
     if (!conv) throw Exceptions.notFound("会话不存在");
     return conv;
   }
 
   /** 更新会话 */
-  async update(conversationId: number, dto: UpdateConversationDto) {
-    await this.get(conversationId); // 确保存在，否则抛异常
+  async update(conversationId: number, userId: number, dto: UpdateConversationDto) {
+    await this.get(conversationId, userId); // 确保存在，否则抛异常
     return this.prisma.chatConversation.update({
       where: { id: conversationId },
       data: {
@@ -89,8 +93,8 @@ export class ConversationService {
   }
 
   /** 软删除会话 */
-  async delete(conversationId: number) {
-    await this.get(conversationId); // 确保存在
+  async delete(conversationId: number, userId: number) {
+    await this.get(conversationId, userId); // 确保存在
     return this.prisma.chatConversation.update({
       where: { id: conversationId },
       data: { status: CommonStatus.DELETED },
@@ -98,8 +102,8 @@ export class ConversationService {
   }
 
   /** AI 生成会话标题 */
-  async generateTitle(conversationId: number, dto: GenerateTitleDto) {
-    const conv = await this.get(conversationId);
+  async generateTitle(conversationId: number, userId: number, dto: GenerateTitleDto) {
+    const conv = await this.get(conversationId, userId);
 
     // 已有非默认标题则跳过
     const isDefaultTitle = !conv.title || conv.title === "新会话" || conv.title.startsWith("知识库 - ");
@@ -119,12 +123,12 @@ export class ConversationService {
       );
 
       const cleanTitle = title.trim().slice(0, 50);
-      await this.update(conversationId, { title: cleanTitle });
+      await this.update(conversationId, userId, { title: cleanTitle });
       return { title: cleanTitle };
     } catch {
       // AI 生成失败，用首条消息前 50 字作为 fallback
       const fallback = firstUserMsg.content.slice(0, 50);
-      await this.update(conversationId, { title: fallback });
+      await this.update(conversationId, userId, { title: fallback });
       return { title: fallback };
     }
   }

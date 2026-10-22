@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FC } from "react";
+import { useState, useReducer } from "react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/zh-cn";
@@ -31,6 +31,10 @@ const DEFAULT_FILE_ICON = <FileText className="size-4 text-muted-foreground" />;
 
 export function DocumentList({ documents, selectedId, onSelect, onDelete, loading }: DocumentListProps) {
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [deletion, updateDeletion] = useReducer((state: { busy: boolean; error: string }, patch: Partial<{ busy: boolean; error: string }>) => ({ ...state, ...patch }), {
+    busy: false,
+    error: "",
+  });
 
   if (loading) {
     return (
@@ -90,7 +94,9 @@ export function DocumentList({ documents, selectedId, onSelect, onDelete, loadin
                 )}
               </p>
               {doc.status === 4 && doc.errorMessage ? (
-                <p className="text-xs text-destructive/90 truncate" title={doc.errorMessage}>{doc.errorMessage}</p>
+                <p className="text-xs text-destructive/90 truncate" title={doc.errorMessage}>
+                  {doc.errorMessage}
+                </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   {formatFileSize(doc.fileSize)} · {doc.chunkCount} 切片 · {dayjs(doc.createdAt).format("MM/DD")}
@@ -120,15 +126,31 @@ export function DocumentList({ documents, selectedId, onSelect, onDelete, loadin
             <DialogTitle>确认删除</DialogTitle>
             <DialogDescription>此操作不可撤销。确定要删除文档「{targetDoc?.fileName ?? ""}」吗？</DialogDescription>
           </DialogHeader>
+          {deletion.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {deletion.error}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
               取消
             </Button>
             <Button
               variant="destructive"
+              disabled={deletion.busy}
               onClick={() => {
-                if (targetDoc) onDelete(targetDoc);
-                setDeleteTarget(null);
+                if (!targetDoc) return;
+                void (async () => {
+                  updateDeletion({ busy: true, error: "" });
+                  try {
+                    await onDelete(targetDoc);
+                    setDeleteTarget(null);
+                  } catch (error) {
+                    updateDeletion({ error: error instanceof Error ? error.message : "删除失败，请重试" });
+                  } finally {
+                    updateDeletion({ busy: false });
+                  }
+                })();
               }}
             >
               确认删除

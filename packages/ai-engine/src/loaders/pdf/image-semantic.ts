@@ -111,7 +111,7 @@ export async function detectPdfImageBlocks(pdfBuffer: Buffer, onlyPages?: Set<nu
     const filterByPage = onlyPages && onlyPages.size > 0;
 
     for (let i = 0; i < pages; i++) {
-      if (filterByPage && !onlyPages!.has(i + 1)) continue; // 只探测 Unstructured 判定的图页
+      if (filterByPage && !onlyPages.has(i + 1)) continue; // 只探测 Unstructured 判定的图页
       const page = doc.loadPage(i);
       // 页面尺寸（MediaBox，pt）：用于过滤整页图与 clamp 坐标
       const [pageX0, pageY0, pageX1, pageY1] = page.getBounds();
@@ -209,7 +209,10 @@ async function callDoubaoVision(pngBuffer: Buffer, caption: string | undefined, 
   if (!content) throw new Error("豆包视觉返回为空");
 
   // 去掉可能的 ```json 围栏后解析
-  const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  const cleaned = content
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
   return JSON.parse(cleaned);
 }
 
@@ -238,11 +241,7 @@ async function renderPagePng(pdfBuffer: Buffer, pageIndex: number): Promise<Buff
 
 /** 图块 bbox（pt）→ 像素区域。注意：mupdf DisplayList 设备回调的 y 已是 top-down
  *  （与 Pixmap 像素一致，实测无需翻转；若按 PDF bottom-up 翻转会裁到错误位置） */
-function bboxToPixels(
-  bbox: FigureBlock["bbox"],
-  pageWidthPx: number,
-  pageHeightPx: number,
-): { left: number; top: number; width: number; height: number } {
+function bboxToPixels(bbox: FigureBlock["bbox"], pageWidthPx: number, pageHeightPx: number): { left: number; top: number; width: number; height: number } {
   const x0 = Math.max(0, Math.round(bbox.x0 * RENDER_ZOOM));
   const x1 = Math.min(pageWidthPx, Math.round(bbox.x1 * RENDER_ZOOM));
   const y0 = Math.max(0, Math.round(bbox.y0 * RENDER_ZOOM));
@@ -272,10 +271,7 @@ async function cropAndCompress(pagePng: Buffer, bbox: FigureBlock["bbox"]): Prom
  * @param figures    待处理的图块（page + bbox + caption）
  * @returns          每个图的结果；关闭（provider≠ark）或失败降级时，图按 skipped 处理
  */
-export async function semanticizePdfFigures(
-  pdfBuffer: Buffer,
-  figures: FigureBlock[],
-): Promise<ImageSemanticResult[]> {
+export async function semanticizePdfFigures(pdfBuffer: Buffer, figures: FigureBlock[]): Promise<ImageSemanticResult[]> {
   if (figures.length === 0) return [];
   const cfg = getConfig();
   if (!isImageSemanticEnabled()) return [];
@@ -323,9 +319,7 @@ export async function semanticizePdfFigures(
         }
       } catch (err) {
         // 单图失败（网络/超时/JSON 解析/上游报错）→ 按 skip 处理，不阻塞整条解析
-        console.warn(
-          `[image-semantic] 第 ${fig.page} 页图片语义化失败（已跳过）：${err instanceof Error ? err.message : String(err)}`,
-        );
+        console.warn(`[image-semantic] 第 ${fig.page} 页图片语义化失败（已跳过）：${err instanceof Error ? err.message : String(err)}`);
         results.push({ page: fig.page, caption: fig.caption, skipped: true });
       }
     }

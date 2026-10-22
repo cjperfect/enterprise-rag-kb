@@ -34,7 +34,7 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const onCopy = () => {
     if (!code || isCopied) return;
-    copyToClipboard(code);
+    void copyToClipboard(code).catch((error: unknown) => console.error("复制失败", error));
   };
 
   return (

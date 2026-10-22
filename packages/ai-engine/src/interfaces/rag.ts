@@ -36,6 +36,8 @@ export interface RagSearchResult {
 
 /** PGVectorStore 中存储的 metadata */
 export interface ChunkMetadata {
+  /** 索引版本 */
+  revision?: string;
   documentId: number;
   kbId: number;
   chunkIndex: number;
@@ -47,6 +49,7 @@ export interface ChunkMetadata {
 
 /** 写入 ES 词法索引的切片（内部转换用） */
 export interface LexicalChunk {
+  revision?: string;
   index: number;
   content: string;
   kbId: number;
@@ -63,4 +66,20 @@ export interface LexicalHit {
   content: string;
   kb_name?: string | null;
   document_name?: string | null;
+}
+
+/** 完整写入两路索引但尚未激活的文档版本 */
+export interface PreparedIndex {
+  /** 版本唯一标识 */
+  revision: string;
+  /** 切片记录 */
+  chunks: ChunkData[];
+}
+
+/** 当前允许检索的文档版本 */
+export interface ActiveDocument {
+  /** 文档 ID */
+  id: number;
+  /** 活跃版本；空串代表历史版本 */
+  revision: string;
 }

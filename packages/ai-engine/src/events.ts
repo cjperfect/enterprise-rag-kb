@@ -1,3 +1,7 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
+/** 单次请求的事件归属，避免并发用户任务串流。 */
+export const taskContext = new AsyncLocalStorage<{ userId?: number }>();
 /**
  * 任务事件定义 + 事件总线（ai-engine 内建）
  *
@@ -41,6 +45,8 @@ export const TaskEvent = {
 
 /** 任务事件载荷（各阶段字段可选，四种事件共用） */
 export interface TaskEventPayload {
+  /** 任务所属用户；后台独立任务可为空 */
+  userId?: number;
   /** 任务唯一 ID */
   taskId: string;
   /** 任务类型 */
@@ -83,6 +89,10 @@ export const taskBus = new EventEmitter();
 
 /** 触发事件（ai-engine 内部统一走这里） */
 export function emit(event: string, ...args: unknown[]): boolean {
+  const payload = args[0];
+  if (typeof payload === "object" && payload !== null) {
+    return taskBus.emit(event, { ...payload, userId: taskContext.getStore()?.userId }, ...args.slice(1));
+  }
   return taskBus.emit(event, ...args);
 }
 

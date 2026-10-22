@@ -1,5 +1,5 @@
 {
-  "name": "@langchain-rag/shared",
+  "name": "@enterprise-rag-kb/shared",
   "version": "1.0.0",
   "description": "Shared enums and types for langchain-rag",
   "type": "module",

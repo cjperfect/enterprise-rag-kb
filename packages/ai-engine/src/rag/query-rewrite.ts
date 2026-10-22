@@ -19,11 +19,10 @@
 import { complete } from "@earendil-works/pi-ai/compat";
 import { resolveModel } from "../agent/model";
 
-const QUERY_REWRITE_ENABLED =
-  (process.env.QUERY_REWRITE_ENABLED ?? "false").trim().toLowerCase() === "true";
+const QUERY_REWRITE_ENABLED = (process.env.QUERY_REWRITE_ENABLED ?? "false").trim().toLowerCase() === "true";
 const TIMEOUT_MS = Number(process.env.QUERY_REWRITE_TIMEOUT_MS ?? "3000");
 
-const REWRITE_PROMPT = `你是检索查询优化助手。把用户问题改写成更适合在产品说明书知识库中检索的形式。
+const REWRITE_PROMPT = `你是检索查询优化助手。把用户问题改写成更适合在企业知识库中检索的形式。
 
 要求：
 1. 提取核心实体、型号、参数（如 N6 mini、电池、充电）
@@ -34,7 +33,7 @@ const REWRITE_PROMPT = `你是检索查询优化助手。把用户问题改写�
 
 例子：
 用户："这个梳子充一次电能用多久啊"
-改写："N6 mini 充电时间 续航 一次充电使用时长"
+改写："梳子 续航 一次充电使用时长"
 
 用户："红灯一直闪是怎么回事"
 改写："充电指示灯 红色闪烁 故障 异常状态"
@@ -50,11 +49,12 @@ export async function rewriteQuery(original: string): Promise<{ rewritten: strin
   // 太短的 query 不用改（"充电"这种已经很精炼）
   if (original.trim().length < 6) return { rewritten: original, used: false };
 
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     // 单次 completion（不走 agent loop）：默认模型 + 低 token 预算 + 硬超时
     const model = await resolveModel();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     const res = await complete(
       model,
@@ -81,9 +81,9 @@ export async function rewriteQuery(original: string): Promise<{ rewritten: strin
 
     return { rewritten: text, used: true };
   } catch (err) {
-    console.warn(
-      `[query-rewrite] 改写失败：${err instanceof Error ? err.message : String(err)}，fallback 原 query`,
-    );
+    console.warn(`[query-rewrite] 改写失败：${err instanceof Error ? err.message : String(err)}，fallback 原 query`);
     return { rewritten: original, used: false };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

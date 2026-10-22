@@ -1,4 +1,4 @@
-import { ChatModelAdapter } from "@assistant-ui/react";
+import { ChatModelAdapter, type ChatModelRunResult, type ToolCallMessagePart, type ThreadAssistantMessagePart } from "@assistant-ui/react";
 import { getConversationId } from "./remote-thread-list.adapter";
 import { knowledgeBaseRegistry } from "@/lib/knowledge-base-registry";
 import { atMentionFormatter } from "@/lib/directive-formatter";
@@ -10,6 +10,7 @@ async function* streamChat(body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
 
+  if (response.status === 401) window.dispatchEvent(new Event("rag:unauthorized"));
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
@@ -21,10 +22,10 @@ async function* streamChat(body: Record<string, unknown>) {
   let buffer = "";
   let fullText = "";
   let fullReasoning = "";
-  const toolParts: any[] = [];
+  const toolParts: ToolCallMessagePart[] = [];
 
-  const buildParts = (): any[] => {
-    const parts: any[] = [];
+  const buildParts = (): ChatModelRunResult["content"] => {
+    const parts: ThreadAssistantMessagePart[] = [];
     if (fullReasoning) parts.push({ type: "reasoning", text: fullReasoning });
     if (fullText) parts.push({ type: "text", text: fullText });
     parts.push(...toolParts);
@@ -50,8 +51,7 @@ async function* streamChat(body: Record<string, unknown>) {
 
       if (!dataStr) continue;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const d = JSON.parse(dataStr) as any;
+      const d = JSON.parse(dataStr);
 
       switch (eventType) {
         case "error":
@@ -74,7 +74,7 @@ async function* streamChat(body: Record<string, unknown>) {
           break;
         case "tool_end": {
           const last = toolParts[toolParts.length - 1];
-          if (last) last.result = d.result;
+          if (last) toolParts[toolParts.length - 1] = { ...last, result: d.result };
           yield { content: buildParts() };
           break;
         }
@@ -123,10 +123,10 @@ export const chatAdapter: ChatModelAdapter = {
         .join("\n") ?? "";
 
     // 从当前会话的消息链中推导 parentMessageId，避免跨会话 ID 污染
-    let parentMessageId: number | null = null;
+    let parentMessageId: string | null = null;
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === "assistant") {
-        parentMessageId = parseInt(messages[i].id, 10) || null;
+        parentMessageId = messages[i].id || null;
         break;
       }
     }
@@ -150,7 +150,7 @@ export const chatAdapter: ChatModelAdapter = {
   },
 };
 
-export function createKnowledgeChatAdapter(knowledgeBaseId: number, _knowledgeBaseName: string): ChatModelAdapter {
+export function createKnowledgeChatAdapter(knowledgeBaseId: number): ChatModelAdapter {
   return {
     async *run({ messages, context, unstable_threadId }) {
       const conversationId = getConversationId(unstable_threadId);
@@ -163,10 +163,10 @@ export function createKnowledgeChatAdapter(knowledgeBaseId: number, _knowledgeBa
           .join("\n") ?? "";
 
       // 从当前会话的消息链中推导 parentMessageId
-      let parentMessageId: number | null = null;
+      let parentMessageId: string | null = null;
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === "assistant") {
-          parentMessageId = parseInt(messages[i].id, 10) || null;
+          parentMessageId = messages[i].id || null;
           break;
         }
       }

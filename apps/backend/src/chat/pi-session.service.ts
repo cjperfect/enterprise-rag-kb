@@ -3,8 +3,8 @@ import { existsSync, readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { PI_SESSION_DIR } from "@langchain-rag/shared/constants";
-import type { PiMessage } from "@langchain-rag/shared/interfaces";
+import { PI_SESSION_DIR } from "@enterprise-rag-kb/shared/constants";
+import type { PiMessage } from "@enterprise-rag-kb/shared/interfaces";
 
 /**
  * 项目根目录（用 __dirname 锚定，不依赖进程 cwd）：
@@ -31,6 +31,11 @@ const PROJECT_ROOT = resolve(__dirname, "..", "..", "..", "..");
 export class PiSessionService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async assertOwner(conversationId: number, userId: number) {
+    const conv = await this.prisma.chatConversation.findFirst({ where: { id: conversationId, userId, status: { in: [1, 2] } } });
+    if (!conv) throw new NotFoundException("会话不存在");
+  }
+
   /** 生成稳定 pi 会话 id（pi header.id，满足 [A-Za-z0-9._-]+ 规则） */
   static makeSessionId(conversationId: number): string {
     return `conv-${conversationId}`;
@@ -50,7 +55,8 @@ export class PiSessionService {
    * 确保会话有 session_file 记录（首次对话前生成路径并落 PG）。
    * 返回会话文件绝对路径。
    */
-  async ensureSessionFile(conversationId: number): Promise<string> {
+  async ensureSessionFile(conversationId: number, userId: number): Promise<string> {
+    await this.assertOwner(conversationId, userId);
     const file = PiSessionService.sessionFilePath(conversationId);
     const conv = await this.prisma.chatConversation.findUnique({
       where: { id: conversationId },
@@ -91,7 +97,8 @@ export class PiSessionService {
   // ========================================================================
 
   /** 获取某条消息的所有分支子节点（entry 的直接子消息，新→旧） */
-  async getBranches(conversationId: number, entryId: string): Promise<PiMessage[]> {
+  async getBranches(conversationId: number, userId: number, entryId: string): Promise<PiMessage[]> {
+    await this.assertOwner(conversationId, userId);
     const list = this.readEntries(conversationId)
       .filter((e) => e.type === "message" && e.parentId === entryId)
       .sort((a, b) => (b.timestamp ?? "").localeCompare(a.timestamp ?? ""));
@@ -104,7 +111,8 @@ export class PiSessionService {
    * 从 rootId（或当前 leaf）沿 parentId 回溯到根，取 message 类型 entry。
    * 不传 rootId 时返回当前分支（leaf 回溯链）。
    */
-  async getMessages(conversationId: number, rootId?: string): Promise<PiMessage[]> {
+  async getMessages(conversationId: number, userId: number, rootId?: string): Promise<PiMessage[]> {
+    await this.assertOwner(conversationId, userId);
     const entries = this.readEntries(conversationId);
     if (entries.length === 0) return [];
 
@@ -139,7 +147,8 @@ export class PiSessionService {
    * 编辑消息（分叉重放）：在目标 entry 后 append 修改后的 user 消息，
    * leaf 指向新 entry。原消息保留在树上（可回溯），下次对话从新分支继续。
    */
-  async editMessage(conversationId: number, entryId: string, content: string): Promise<PiMessage> {
+  async editMessage(conversationId: number, userId: number, entryId: string, content: string): Promise<PiMessage> {
+    await this.assertOwner(conversationId, userId);
     const entries = this.readEntries(conversationId);
     if (!entries.some((e) => e.id === entryId)) {
       throw new NotFoundException("消息不存在");
@@ -164,7 +173,8 @@ export class PiSessionService {
   }
 
   /** 切换当前分支：仅移动 leaf 指针（pi 的 branch 语义），下次对话从该 entry 恢复 */
-  async switchBranch(conversationId: number, entryId: string): Promise<void> {
+  async switchBranch(conversationId: number, userId: number, entryId: string): Promise<void> {
+    await this.assertOwner(conversationId, userId);
     const entries = this.readEntries(conversationId);
     if (!entries.some((e) => e.id === entryId)) {
       throw new NotFoundException("消息不存在");
@@ -196,14 +206,16 @@ interface PiEntry {
 /** entry.message → 前端可展示的消息对象（文本/推理分离，工具调用不进正文） */
 function toPiMessage(entry: PiEntry): PiMessage {
   const msg = entry.message;
-  const parts = Array.isArray(msg?.content)
-    ? msg.content
-    : msg?.content
-      ? [{ type: "text", text: String(msg.content) }]
-      : [];
+  const parts = Array.isArray(msg?.content) ? msg.content : msg?.content ? [{ type: "text", text: String(msg.content) }] : [];
 
-  const text = parts.filter((p) => p.type === "text").map((p) => p.text ?? "").join("");
-  const reasoning = parts.filter((p) => p.type === "thinking").map((p) => p.text ?? "").join("");
+  const text = parts
+    .filter((p) => p.type === "text")
+    .map((p) => p.text ?? "")
+    .join("");
+  const reasoning = parts
+    .filter((p) => p.type === "thinking")
+    .map((p) => p.text ?? "")
+    .join("");
 
   return {
     id: entry.id,

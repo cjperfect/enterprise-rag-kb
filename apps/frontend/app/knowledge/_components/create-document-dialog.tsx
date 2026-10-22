@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RichTextEditor, htmlToMd } from "@/components/rich-text-editor";
+import { useAuthUser } from "@/lib/auth-context";
 import { TaskProgressPanel } from "./task-progress";
 
 // ---------------------------------------------------------------------------
@@ -20,9 +21,9 @@ interface Draft {
   content: string;
 }
 
-function loadDraft(): Draft {
+function loadDraft(userId: number): Draft {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(`${DRAFT_KEY}:${userId}`);
     if (raw) return JSON.parse(raw) as Draft;
   } catch {
     /* 忽略解析错误 */
@@ -30,17 +31,17 @@ function loadDraft(): Draft {
   return { fileName: "", content: "" };
 }
 
-function saveDraft(draft: Draft) {
+function saveDraft(draft: Draft, userId: number) {
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    localStorage.setItem(`${DRAFT_KEY}:${userId}`, JSON.stringify(draft));
   } catch {
     /* 忽略存储满等异常 */
   }
 }
 
-function clearDraft() {
+function clearDraft(userId: number) {
   try {
-    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(`${DRAFT_KEY}:${userId}`);
   } catch {
     /* 忽略 */
   }
@@ -60,9 +61,14 @@ interface CreateDocumentDialogProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function CreateDocumentDialog({ open, onOpenChange, onSubmit }: CreateDocumentDialogProps) {
-  const [fileName, setFileName] = useState("");
-  const [content, setContent] = useState("");
+export function CreateDocumentDialog(props: CreateDocumentDialogProps) {
+  return <CreateDocumentForm key={String(props.open)} {...props} />;
+}
+
+function CreateDocumentForm({ open, onOpenChange, onSubmit }: CreateDocumentDialogProps) {
+  const { id: userId } = useAuthUser();
+  const [fileName, setFileName] = useState(() => (open ? loadDraft(userId).fileName : ""));
+  const [content, setContent] = useState(() => (open ? loadDraft(userId).content : ""));
   const [fullscreen, setFullscreen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -73,28 +79,10 @@ export function CreateDocumentDialog({ open, onOpenChange, onSubmit }: CreateDoc
   const [resetKey, setResetKey] = useState(0);
   const editorRef = useRef<ReturnType<typeof import("@tiptap/react").useEditor>>(null);
 
-  // 打开弹窗时恢复草稿
-  useEffect(() => {
-    if (open) {
-      const draft = loadDraft();
-      setFileName(draft.fileName);
-      setContent(draft.content);
-      setFullscreen(false);
-      setError("");
-    }
-  }, [open]);
-
-  // 清理：关闭弹窗时
-  useEffect(() => {
-    if (!open) {
-      setContent("");
-    }
-  }, [open]);
-
   // 实时保存草稿（防抖 500ms）
   const saveDraftDebounced = useCallback(() => {
-    saveDraft({ fileName, content });
-  }, [fileName, content]);
+    saveDraft({ fileName, content }, userId);
+  }, [fileName, content, userId]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,7 +91,7 @@ export function CreateDocumentDialog({ open, onOpenChange, onSubmit }: CreateDoc
   }, [fileName, content, open, saveDraftDebounced]);
 
   const reset = () => {
-    clearDraft();
+    clearDraft(userId);
     setFileName("");
     setContent("");
     setFullscreen(false);
@@ -120,7 +108,7 @@ export function CreateDocumentDialog({ open, onOpenChange, onSubmit }: CreateDoc
     // 新建文档默认为 Markdown：文件名无扩展名时自动补 .md（如「产品需求文档」→「产品需求文档.md」）
     const finalName = /\.\w+$/.test(trimmedName) ? trimmedName : `${trimmedName}.md`;
 
-    const md = editorRef.current?.getMarkdown?.() ?? htmlToMd(editorRef.current?.getHTML?.() ?? "") ?? content;
+    const md = htmlToMd(editorRef.current?.getHTML?.() ?? "") ?? content;
     if (!md.trim()) {
       setError("请输入文档内容");
       return;
@@ -213,7 +201,13 @@ export function CreateDocumentDialog({ open, onOpenChange, onSubmit }: CreateDoc
 
               <div className="flex-1 flex flex-col min-w-0 space-y-1">
                 <Label>内容</Label>
-                <RichTextEditor initialContent={content} placeholder="使用 Markdown 语法或工具栏编写文档内容..." minHeight="200px" onContentChange={setContent} editorRef={editorRef} />
+                <RichTextEditor
+                  initialContent={content}
+                  placeholder="使用 Markdown 语法或工具栏编写文档内容..."
+                  minHeight="200px"
+                  onContentChange={setContent}
+                  editorRef={editorRef}
+                />
               </div>
 
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -232,7 +226,7 @@ export function CreateDocumentDialog({ open, onOpenChange, onSubmit }: CreateDoc
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
                 取消
               </Button>
-              <Button onClick={handleSubmit} disabled={loading} className="gap-2 ml-2">
+              <Button onClick={() => void handleSubmit()} disabled={loading} className="gap-2 ml-2">
                 {loading ? <Loader2 className="size-4 animate-spin" /> : null}
                 创建
               </Button>

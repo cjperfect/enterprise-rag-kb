@@ -16,10 +16,10 @@
  *   OLLAMA_MODEL      本地默认模型（默认 qwen3.5:0.8b）
  *   OLLAMA_MODELS     可选：额外可选的 ollama 模型名，逗号分隔（默认仅 OLLAMA_MODEL）
  */
-import { createProvider, type Model } from "@earendil-works/pi-ai";
+import { createProvider, type Model, type Api } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_MODEL } from "@langchain-rag/shared/constants";
+import { DEFAULT_MODEL } from "@enterprise-rag-kb/shared/constants";
 
 /** ark provider 标识 */
 const ARK_PROVIDER = "custom";
@@ -52,7 +52,7 @@ function providerConfig(providerId: string): { baseUrl: string; apiKey: string |
 }
 
 /** 已注册模型：providerId → modelName → Model */
-const modelRegistry = new Map<string, Map<string, Model>>();
+const modelRegistry = new Map<string, Map<string, Model<Api>>>();
 
 let runtimePromise: Promise<ModelRuntime> | null = null;
 
@@ -69,10 +69,7 @@ function registerProvider(rt: ModelRuntime, providerId: string): void {
     auth: {
       apiKey: {
         name: `${providerId} API key`,
-        resolve: async () =>
-          apiKey
-            ? { auth: { apiKey, baseUrl }, env: { OPENAI_API_KEY: apiKey }, source: "OPENAI_API_KEY" }
-            : undefined,
+        resolve: () => Promise.resolve(apiKey ? { auth: { apiKey, baseUrl }, env: { OPENAI_API_KEY: apiKey }, source: "OPENAI_API_KEY" } : undefined),
       },
     },
     models: [...(modelRegistry.get(providerId) ?? new Map()).values()],
@@ -112,7 +109,7 @@ export function getModelRuntime(): Promise<ModelRuntime> {
 }
 
 /** 构造单个模型对象（openai-completions 兼容；费用/窗口参数不参与计费，取保守值） */
-function buildModel(modelName: string, providerId: string): Model {
+function buildModel(modelName: string, providerId: string): Model<Api> {
   const { baseUrl } = providerConfig(providerId);
   return {
     id: modelName,
@@ -135,7 +132,7 @@ function buildModel(modelName: string, providerId: string): Model {
  * OpenAI 兼容端点按名字请求即可。DEFAULT_MODEL（deepseek-v4-flash）视为「未指定」，
  * 落到环境配置的真实默认模型。
  */
-export async function ensureModel(modelName?: string): Promise<Model> {
+export async function ensureModel(modelName?: string): Promise<Model<Api>> {
   const name = modelName && modelName !== DEFAULT_MODEL ? modelName : defaultModelName();
   const providerId = providerForModel(name);
 
@@ -161,6 +158,6 @@ function defaultModelName(): string {
 }
 
 /** 解析模型：与旧 getAgent(modelName) 语义一致，切换模型 = 取另一个已注册的模型 */
-export function resolveModel(modelName?: string): Promise<Model> {
+export function resolveModel(modelName?: string): Promise<Model<Api>> {
   return ensureModel(modelName);
 }

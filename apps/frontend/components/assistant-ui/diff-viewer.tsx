@@ -109,19 +109,19 @@ function pairLinesForSplit(lines: ParsedLine[]): SplitLinePair[] {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i]!;
+    const line = lines[i];
     if (line.type === "normal") {
       pairs.push({ left: line, right: line });
       i++;
     } else if (line.type === "del") {
       const deletions: ParsedLine[] = [];
-      while (i < lines.length && lines[i]!.type === "del") {
-        deletions.push(lines[i]!);
+      while (i < lines.length && lines[i].type === "del") {
+        deletions.push(lines[i]);
         i++;
       }
       const additions: ParsedLine[] = [];
-      while (i < lines.length && lines[i]!.type === "add") {
-        additions.push(lines[i]!);
+      while (i < lines.length && lines[i].type === "add") {
+        additions.push(lines[i]);
         i++;
       }
       const maxLen = Math.max(deletions.length, additions.length);

@@ -1,7 +1,7 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from "@nestjs/common";
 import { Response } from "express";
 import { BusinessException } from "../exceptions/business.exception";
-import { ErrorCode } from "@langchain-rag/shared";
+import { ErrorCode } from "@enterprise-rag-kb/shared";
 
 /**
  * 全局异常过滤器 — 将所有异常包装为 { code, message, data }
@@ -26,7 +26,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       httpStatus = exception.getStatus();
       code = httpStatus; // 非业务异常，code = HTTP 状态码
       const res = exception.getResponse();
-      message = typeof res === "string" ? res : ((res as any).message ?? exception.message);
+      message = typeof res === "string" ? res : "message" in res && typeof res.message === "string" ? res.message : exception.message;
       if (Array.isArray(message)) {
         message = message[0]; // class-validator 错误取第一条
       }

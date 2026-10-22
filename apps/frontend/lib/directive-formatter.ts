@@ -19,7 +19,7 @@ export const atMentionFormatter: Unstable_DirectiveFormatter = {
         });
       }
 
-      const label = match[1]!;
+      const label = match[1];
       segments.push({
         kind: "mention",
         type: "mention",

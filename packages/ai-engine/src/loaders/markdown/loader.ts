@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFile } from "node:fs/promises";
 import { Document } from "@langchain/core/documents";
 
 /**
@@ -14,7 +14,7 @@ import { Document } from "@langchain/core/documents";
  * @param filePath Markdown 文件路径
  */
 export async function loadMarkdown(filePath: string): Promise<Document[]> {
-  const content = readFileSync(filePath, "utf-8");
+  const content = await readFile(filePath, "utf-8");
   return [
     new Document({
       pageContent: content,

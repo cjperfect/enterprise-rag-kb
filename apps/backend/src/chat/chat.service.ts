@@ -2,12 +2,12 @@ import { Injectable } from "@nestjs/common";
 import { ConversationService } from "../conversation/conversation.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PiSessionService } from "./pi-session.service";
-import { AiEngine } from "@langchain-rag/ai-engine";
-import type { RagSearchResult } from "@langchain-rag/ai-engine";
+import { AiEngine } from "@enterprise-rag-kb/ai-engine";
+import type { RagSearchResult } from "@enterprise-rag-kb/ai-engine";
 import { BusinessException } from "../common/exceptions/business.exception";
-import { ErrorCode } from "@langchain-rag/shared";
+import { ErrorCode } from "@enterprise-rag-kb/shared";
 import type { ChatDto, ChatStreamEvent } from "./dto/chat.dto";
-import type { PiSessionLoad, PiSessionSaved } from "@langchain-rag/shared/interfaces";
+import type { PiSessionLoad, PiSessionSaved } from "@enterprise-rag-kb/shared/interfaces";
 
 /**
  * AI Chat 服务 — 组合操作
@@ -35,13 +35,13 @@ export class ChatService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "未初始化会话");
     }
 
-    const conv = await this.conversationService.get(conversationId);
+    const conv = await this.conversationService.get(conversationId, userId);
     // 会话id传给前端，后续对话带过来
     yield { event: "session", data: { session_id: conversationId } };
 
     // 2. 定位 pi 会话（JSONL 文件）：生成/复用会话文件路径，leaf 指针来自 PG。
     //    对话全程由 pi 管理上下文（文件 append 即落盘，无需后端回写）。
-    const sessionFile = await this.piSessionService.ensureSessionFile(conversationId);
+    const sessionFile = await this.piSessionService.ensureSessionFile(conversationId, userId);
     const piLoad: PiSessionLoad = {
       sessionId: PiSessionService.makeSessionId(conversationId),
       sessionFile,
@@ -56,9 +56,14 @@ export class ChatService {
     // 3. 检索作用域：是否检索、检索几次都由 agent 决定，这里只声明「允许检索哪些库」
     const kbIds = chatDto.knowledge_ids?.length ? chatDto.knowledge_ids : chatDto.knowledge_id != null ? [chatDto.knowledge_id] : [];
 
+    if (kbIds.length) {
+      const allowed = await this.prisma.knowledgeBase.count({ where: { id: { in: kbIds }, userId, status: { in: [1, 2] } } });
+      if (allowed !== new Set(kbIds).size) throw new BusinessException(ErrorCode.BAD_REQUEST, "知识库不存在或无权访问");
+    }
+
     // 4. 调用 AI 引擎，流式输出。pi 会话从 PG 恢复 → ai-engine 内部
     //    SessionManager.inMemory(entries) 重建分支树，跑完回调返回最新状态。
-    const startTime = Date.now();
+
     let fullContent = "";
     let fullReasoning = "";
     let inputTokens = 0;
@@ -117,8 +122,6 @@ export class ChatService {
       return;
     }
 
-    const latency = Date.now() - startTime;
-
     // 5. 汇总知识来源：从数据库补名称（向量 metadata 可能没有，旧数据兼容）
     const retrievedDocs = [...docMap.values()];
     const uniqueKbIds = [...new Set(retrievedDocs.map((d) => d.kbId))];
@@ -137,7 +140,7 @@ export class ChatService {
     let userEntryId: string | null = null;
     let assistantEntryId: string | null = null;
     if (savedPayload) {
-      const payload: PiSessionSaved = savedPayload as PiSessionSaved;
+      const payload: PiSessionSaved = savedPayload;
       const userEntry = payload.added.find((a) => a.type === "message" && a.role === "user");
       const assistantEntries = payload.added.filter((a) => a.type === "message" && a.role === "assistant");
       const assistantEntry = assistantEntries[assistantEntries.length - 1];
@@ -155,7 +158,7 @@ export class ChatService {
       });
     }
     if (!conv.title) {
-      await this.conversationService.update(conversationId, {
+      await this.conversationService.update(conversationId, userId, {
         title: chatDto.prompt.slice(0, 50),
       });
     }
@@ -177,5 +180,4 @@ export class ChatService {
       },
     };
   }
-
 }

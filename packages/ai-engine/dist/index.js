@@ -2,7 +2,9 @@
 import "dotenv/config";
 
 // src/events.ts
+import { AsyncLocalStorage } from "async_hooks";
 import { EventEmitter } from "events";
+var taskContext = new AsyncLocalStorage();
 var TaskType = /* @__PURE__ */ ((TaskType2) => {
   TaskType2["DOCUMENT_INDEX"] = "document_index";
   TaskType2["RAG_SEARCH"] = "rag_search";
@@ -24,6 +26,10 @@ function newTaskId(taskType) {
 }
 var taskBus = new EventEmitter();
 function emit(event, ...args) {
+  const payload = args[0];
+  if (typeof payload === "object" && payload !== null) {
+    return taskBus.emit(event, { ...payload, userId: taskContext.getStore()?.userId }, ...args.slice(1));
+  }
   return taskBus.emit(event, ...args);
 }
 async function withTaskEvents(taskType, context, run) {
@@ -74,6 +80,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 
 // src/rag/rag.service.ts
+import { randomUUID } from "crypto";
 import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
 import { Document as Document2 } from "@langchain/core/documents";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
@@ -191,7 +198,7 @@ var defaultEmbeddings = createEmbeddings();
 
 // src/constants/rag.ts
 var RAG_TABLE_NAME = "langchain_pg_embedding";
-var LEXICAL_INDEX_NAME = "rag_bm25_index";
+var LEXICAL_INDEX_NAME = process.env.ES_INDEX_NAME ?? "rag_bm25_index";
 var RAG_EMBEDDING_DIMENSIONS = Number(process.env.EMBEDDING_DIMENSIONS ?? "1024");
 
 // src/rag/bm25.ts
@@ -203,6 +210,9 @@ var LexicalIndexService = class {
   attach() {
     if (this.ready) return;
     this.ready = this.init();
+    void this.ready.catch(() => {
+      this.ready = null;
+    });
   }
   async init() {
     const node = process.env.ES_URL ?? "http://localhost:9200";
@@ -213,6 +223,7 @@ var LexicalIndexService = class {
         index: LEXICAL_INDEX_NAME,
         mappings: {
           properties: {
+            revision_key: { type: "keyword" },
             document_id: { type: "keyword" },
             kb_id: { type: "keyword" },
             chunk_index: { type: "integer" },
@@ -222,6 +233,8 @@ var LexicalIndexService = class {
           }
         }
       });
+    } else {
+      await this.client.indices.putMapping({ index: LEXICAL_INDEX_NAME, properties: { revision_key: { type: "keyword" } } });
     }
   }
   async waitReady() {
@@ -234,6 +247,7 @@ var LexicalIndexService = class {
     if (chunks.length === 0) return;
     await this.insertChunks(
       chunks.map((c) => ({
+        revision: names.revision,
         index: c.index,
         content: c.content,
         kbId,
@@ -249,8 +263,9 @@ var LexicalIndexService = class {
     for (let i = 0; i < chunks.length; i += BATCH) {
       const batch = chunks.slice(i, i + BATCH);
       const operations = batch.flatMap((c) => [
-        { index: { _index: LEXICAL_INDEX_NAME } },
+        { index: { _index: LEXICAL_INDEX_NAME, _id: `${c.documentId}:${c.revision ?? "legacy"}:${c.index}` } },
         {
+          revision_key: `${c.documentId}:${c.revision ?? ""}`,
           document_id: c.documentId,
           kb_id: c.kbId,
           chunk_index: c.index,
@@ -266,19 +281,26 @@ var LexicalIndexService = class {
       }
     }
   }
+  /** 独立评测结束时释放连接。 */
+  async close() {
+    await this.client?.close();
+    this.client = null;
+    this.ready = null;
+  }
   /** 删除某文档的全部词法索引 */
-  async deleteByDocumentId(documentId) {
+  async deleteByDocumentId(documentId, revision) {
     await this.waitReady();
     await this.client.deleteByQuery({
       index: LEXICAL_INDEX_NAME,
-      query: { term: { document_id: documentId } },
+      query: { bool: { filter: [{ term: { document_id: documentId } }, ...revision ? [{ term: { revision_key: `${documentId}:${revision}` } }] : []] } },
       refresh: true
     });
   }
   /** BM25 关键词检索（match 查询 = ES 默认 BM25 打分，kbId 过滤） */
   async search(query, options = {}) {
     await this.waitReady();
-    const { kbIds, k = 5 } = options;
+    const { kbIds, k = 5, active } = options;
+    if (active && !active.length || kbIds && !kbIds.length) return [];
     if (!query.trim()) return [];
     const res = await this.client.search({
       index: LEXICAL_INDEX_NAME,
@@ -286,7 +308,20 @@ var LexicalIndexService = class {
       track_scores: true,
       query: {
         bool: {
-          filter: kbIds && kbIds.length > 0 ? [{ terms: { kb_id: kbIds } }] : [],
+          filter: [
+            ...kbIds ? [{ terms: { kb_id: kbIds } }] : [],
+            ...active ? [
+              {
+                bool: {
+                  minimum_should_match: 1,
+                  should: [
+                    { terms: { revision_key: active.map((d) => `${d.id}:${d.revision}`) } },
+                    { bool: { filter: [{ terms: { document_id: active.filter((d) => !d.revision).map((d) => d.id) } }], must_not: [{ exists: { field: "revision_key" } }] } }
+                  ]
+                }
+              }
+            ] : []
+          ],
           must: [{ match: { content: query } }]
         }
       },
@@ -343,7 +378,7 @@ function registerProvider(rt, providerId) {
     auth: {
       apiKey: {
         name: `${providerId} API key`,
-        resolve: async () => apiKey ? { auth: { apiKey, baseUrl }, env: { OPENAI_API_KEY: apiKey }, source: "OPENAI_API_KEY" } : void 0
+        resolve: () => Promise.resolve(apiKey ? { auth: { apiKey, baseUrl }, env: { OPENAI_API_KEY: apiKey }, source: "OPENAI_API_KEY" } : void 0)
       }
     },
     models: [...(modelRegistry.get(providerId) ?? /* @__PURE__ */ new Map()).values()],
@@ -411,7 +446,7 @@ function resolveModel(modelName) {
 // src/rag/query-rewrite.ts
 var QUERY_REWRITE_ENABLED = (process.env.QUERY_REWRITE_ENABLED ?? "false").trim().toLowerCase() === "true";
 var TIMEOUT_MS = Number(process.env.QUERY_REWRITE_TIMEOUT_MS ?? "3000");
-var REWRITE_PROMPT = `\u4F60\u662F\u68C0\u7D22\u67E5\u8BE2\u4F18\u5316\u52A9\u624B\u3002\u628A\u7528\u6237\u95EE\u9898\u6539\u5199\u6210\u66F4\u9002\u5408\u5728\u4EA7\u54C1\u8BF4\u660E\u4E66\u77E5\u8BC6\u5E93\u4E2D\u68C0\u7D22\u7684\u5F62\u5F0F\u3002
+var REWRITE_PROMPT = `\u4F60\u662F\u68C0\u7D22\u67E5\u8BE2\u4F18\u5316\u52A9\u624B\u3002\u628A\u7528\u6237\u95EE\u9898\u6539\u5199\u6210\u66F4\u9002\u5408\u5728\u4F01\u4E1A\u77E5\u8BC6\u5E93\u4E2D\u68C0\u7D22\u7684\u5F62\u5F0F\u3002
 
 \u8981\u6C42\uFF1A
 1. \u63D0\u53D6\u6838\u5FC3\u5B9E\u4F53\u3001\u578B\u53F7\u3001\u53C2\u6570\uFF08\u5982 N6 mini\u3001\u7535\u6C60\u3001\u5145\u7535\uFF09
@@ -422,7 +457,7 @@ var REWRITE_PROMPT = `\u4F60\u662F\u68C0\u7D22\u67E5\u8BE2\u4F18\u5316\u52A9\u62
 
 \u4F8B\u5B50\uFF1A
 \u7528\u6237\uFF1A"\u8FD9\u4E2A\u68B3\u5B50\u5145\u4E00\u6B21\u7535\u80FD\u7528\u591A\u4E45\u554A"
-\u6539\u5199\uFF1A"N6 mini \u5145\u7535\u65F6\u95F4 \u7EED\u822A \u4E00\u6B21\u5145\u7535\u4F7F\u7528\u65F6\u957F"
+\u6539\u5199\uFF1A"\u68B3\u5B50 \u7EED\u822A \u4E00\u6B21\u5145\u7535\u4F7F\u7528\u65F6\u957F"
 
 \u7528\u6237\uFF1A"\u7EA2\u706F\u4E00\u76F4\u95EA\u662F\u600E\u4E48\u56DE\u4E8B"
 \u6539\u5199\uFF1A"\u5145\u7535\u6307\u793A\u706F \u7EA2\u8272\u95EA\u70C1 \u6545\u969C \u5F02\u5E38\u72B6\u6001"
@@ -431,10 +466,11 @@ var REWRITE_PROMPT = `\u4F60\u662F\u68C0\u7D22\u67E5\u8BE2\u4F18\u5316\u52A9\u62
 async function rewriteQuery(original) {
   if (!QUERY_REWRITE_ENABLED) return { rewritten: original, used: false };
   if (original.trim().length < 6) return { rewritten: original, used: false };
+  let timer;
   try {
     const model = await resolveModel();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     const res = await complete(
       model,
       {
@@ -450,10 +486,10 @@ async function rewriteQuery(original) {
     }
     return { rewritten: text, used: true };
   } catch (err) {
-    console.warn(
-      `[query-rewrite] \u6539\u5199\u5931\u8D25\uFF1A${err instanceof Error ? err.message : String(err)}\uFF0Cfallback \u539F query`
-    );
+    console.warn(`[query-rewrite] \u6539\u5199\u5931\u8D25\uFF1A${err instanceof Error ? err.message : String(err)}\uFF0Cfallback \u539F query`);
     return { rewritten: original, used: false };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -571,7 +607,8 @@ ${formatTable(idxs, lines)}`);
 // src/loaders/pdf/unstructured.ts
 var UNSTRUCTURED_TIMEOUT_MS = 12e4;
 var UNSTRUCTURED_POLL_INTERVAL_MS = 2e3;
-async function parsePdfWithUnstructured(pdfBuffer, _options = {}) {
+async function parsePdfWithUnstructured(pdfBuffer, options = {}) {
+  void options;
   const apiKey = process.env.UNSTRUCTURED_API_KEY;
   if (!apiKey) {
     throw new Error("\u7F3A\u5C11 Unstructured \u4E91 API \u914D\u7F6E\uFF1A\u8BF7\u8BBE\u7F6E\u73AF\u5883\u53D8\u91CF UNSTRUCTURED_API_KEY\uFF08apps/backend/.env\uFF09");
@@ -616,9 +653,7 @@ async function parsePdfWithUnstructured(pdfBuffer, _options = {}) {
     } catch (err) {
       lastError = err;
       if (attempt < MAX_ATTEMPTS) {
-        console.warn(
-          `[unstructured] \u7B2C ${attempt} \u6B21\u89E3\u6790\u672A\u6210\u529F\uFF0C${2 * attempt}s \u540E\u91CD\u8BD5\uFF1A${err instanceof Error ? err.message : String(err)}`
-        );
+        console.warn(`[unstructured] \u7B2C ${attempt} \u6B21\u89E3\u6790\u672A\u6210\u529F\uFF0C${2 * attempt}s \u540E\u91CD\u8BD5\uFF1A${err instanceof Error ? err.message : String(err)}`);
         await new Promise((resolve) => setTimeout(resolve, 2e3 * attempt));
       }
     }
@@ -650,7 +685,9 @@ function htmlTableToText(html) {
     const cellRe = /<t([dh])[^>]*>([\s\S]*?)<\/t\1>/gi;
     let cellMatch;
     while (cellMatch = cellRe.exec(trMatch[1])) {
-      cells.push(cellMatch[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim());
+      cells.push(
+        cellMatch[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
+      );
     }
     rows.push(cells);
   }
@@ -853,9 +890,7 @@ async function semanticizePdfFigures(pdfBuffer, figures) {
           results.push({ page: fig.page, caption: fig.caption, skipped: true });
         }
       } catch (err) {
-        console.warn(
-          `[image-semantic] \u7B2C ${fig.page} \u9875\u56FE\u7247\u8BED\u4E49\u5316\u5931\u8D25\uFF08\u5DF2\u8DF3\u8FC7\uFF09\uFF1A${err instanceof Error ? err.message : String(err)}`
-        );
+        console.warn(`[image-semantic] \u7B2C ${fig.page} \u9875\u56FE\u7247\u8BED\u4E49\u5316\u5931\u8D25\uFF08\u5DF2\u8DF3\u8FC7\uFF09\uFF1A${err instanceof Error ? err.message : String(err)}`);
         results.push({ page: fig.page, caption: fig.caption, skipped: true });
       }
     }
@@ -867,9 +902,7 @@ async function semanticizePdfFigures(pdfBuffer, figures) {
 
 // src/loaders/pdf/loader.ts
 function throwOversizeError(reason) {
-  throw new Error(
-    `PDF \u6587\u4EF6\u8D85\u8FC7 ${PDF_DIRECT_LIMIT_BYTES / 1024 / 1024}MB \u4E14${reason}\uFF0C\u8D85\u51FA\u767E\u5EA6\u6587\u6863\u89E3\u6790 pdf_file \u76F4\u4F20\u4E0A\u9650\uFF08\u7F16\u7801\u540E 4M\uFF09\uFF0C\u8BF7\u538B\u7F29\u6216\u62C6\u5206\u540E\u91CD\u8BD5`
-  );
+  throw new Error(`PDF \u6587\u4EF6\u8D85\u8FC7 ${PDF_DIRECT_LIMIT_BYTES / 1024 / 1024}MB \u4E14${reason}\uFF0C\u8D85\u51FA\u767E\u5EA6\u6587\u6863\u89E3\u6790 pdf_file \u76F4\u4F20\u4E0A\u9650\uFF08\u7F16\u7801\u540E 4M\uFF09\uFF0C\u8BF7\u538B\u7F29\u6216\u62C6\u5206\u540E\u91CD\u8BD5`);
 }
 var MIN_TEXT_CHARS = 20;
 var MIN_CJK_CHARS = 5;
@@ -879,7 +912,7 @@ function needOcrPage(pageText) {
   const cjkCount = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
   if (cjkCount >= MIN_CJK_CHARS) return false;
   if ((text.match(/\uFFFD/g) ?? []).length / text.length > 0.1) return true;
-  const usableRatio = (text.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u3000-\u303f\uff00-\uffef\x00-\x7f]/g) ?? []).length / text.length;
+  const usableRatio = (text.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u3000-\u303f\uff00-\uffef\x20-\x7f]/g) ?? []).length / text.length;
   return usableRatio < 0.7;
 }
 async function extractLocalPageTexts(filePath) {
@@ -983,7 +1016,9 @@ function isPageNumberLine(line) {
 }
 function cleanFallbackPageTexts(pageTexts) {
   if (pageTexts.length < 2) {
-    return pageTexts.map((t) => t.split("\n").filter((l) => !isPageNumberLine(l)).join("\n"));
+    return pageTexts.map(
+      (t) => t.split("\n").filter((l) => !isPageNumberLine(l)).join("\n")
+    );
   }
   const lineCount = /* @__PURE__ */ new Map();
   for (const page of pageTexts) {
@@ -1061,18 +1096,14 @@ ${block}` : block;
           }
         }
       } catch (err) {
-        console.warn(
-          `[loadPdf] \u56FE\u7247\u8BED\u4E49\u5316\u6574\u4F53\u5931\u8D25\uFF08\u5DF2\u5FFD\u7565\uFF09\uFF1A${err instanceof Error ? err.message : String(err)}`
-        );
+        console.warn(`[loadPdf] \u56FE\u7247\u8BED\u4E49\u5316\u6574\u4F53\u5931\u8D25\uFF08\u5DF2\u5FFD\u7565\uFF09\uFF1A${err instanceof Error ? err.message : String(err)}`);
       }
     }
     structured.forEach((text, i) => {
       if (!scanPageSet.has(i + 1)) pageTexts[i] = text;
     });
   } catch (err) {
-    console.warn(
-      `[loadPdf] Unstructured \u7248\u9762\u5206\u6790\u5931\u8D25\uFF0C\u6587\u672C\u5C42\u9875\u56DE\u9000\u672C\u5730\u63D0\u53D6\uFF1A${err instanceof Error ? err.message : String(err)}`
-    );
+    console.warn(`[loadPdf] Unstructured \u7248\u9762\u5206\u6790\u5931\u8D25\uFF0C\u6587\u672C\u5C42\u9875\u56DE\u9000\u672C\u5730\u63D0\u53D6\uFF1A${err instanceof Error ? err.message : String(err)}`);
     for (let i = 0; i < pageTexts.length; i++) {
       if (!scanPageSet.has(i + 1)) {
         pageTexts[i] = markLocalTables(pageTexts[i]);
@@ -1102,9 +1133,7 @@ async function loadPdf(filePath, options) {
   try {
     localPages = await extractLocalPageTexts(filePath);
   } catch (err) {
-    console.warn(
-      `[loadPdf] \u672C\u5730\u6587\u672C\u5C42\u63A2\u6D4B\u5931\u8D25\uFF0C\u6574\u4EFD\u6587\u6863\u8D70 OCR\uFF1A${err instanceof Error ? err.message : String(err)}`
-    );
+    console.warn(`[loadPdf] \u672C\u5730\u6587\u672C\u5C42\u63A2\u6D4B\u5931\u8D25\uFF0C\u6574\u4EFD\u6587\u6863\u8D70 OCR\uFF1A${err instanceof Error ? err.message : String(err)}`);
   }
   if (localPages.length === 0) {
     return routeWholeOcr(filePath, buffer, options);
@@ -1153,10 +1182,10 @@ ${text}` : text).filter((t) => t.trim().length > 0).join("\n\n");
 }
 
 // src/loaders/markdown/loader.ts
-import { readFileSync as readFileSync2 } from "fs";
+import { readFile } from "fs/promises";
 import { Document } from "@langchain/core/documents";
 async function loadMarkdown(filePath) {
-  const content = readFileSync2(filePath, "utf-8");
+  const content = await readFile(filePath, "utf-8");
   return [
     new Document({
       pageContent: content,
@@ -1178,6 +1207,8 @@ async function parseDocument(filePath) {
     case "pdf":
       docs = await loadPdf(filePath, { splitPages: false });
       break;
+    case "txt":
+    case "markdown":
     case "md":
       docs = await loadMarkdown(filePath);
       break;
@@ -1195,6 +1226,7 @@ var RRF_K = 60;
 var RagService = class {
   vectorStore = null;
   embeddings;
+  storeReady;
   constructor(embeddings) {
     this.embeddings = embeddings ?? defaultEmbeddings;
   }
@@ -1215,155 +1247,143 @@ var RagService = class {
       distanceStrategy: "cosine",
       scoreNormalization: "similarity"
     };
-    this.vectorStore = await PGVectorStore.initialize(this.embeddings, {
+    this.storeReady ??= PGVectorStore.initialize(this.embeddings, {
       ...config,
       dimensions: RAG_EMBEDDING_DIMENSIONS
     });
-    lexicalIndex.attach();
+    try {
+      this.vectorStore = await this.storeReady;
+    } catch (error) {
+      this.storeReady = void 0;
+      throw error;
+    }
     return this.vectorStore;
   }
-  /**
-   * 索引文档：切片 + 向量化，返回切片数据供后端写 DB
-   *
-   * @param kbId 知识库 ID
-   * @param documentId 文档 ID
-   * @param content 文档全文
-   * @param names 知识库名称 / 文档文件名（存入 vector metadata，检索时直接返回）
-   * @param taskId 可选：外层任务已存在时复用其 taskId（跳过 started/completed 生命周期，
-   *               只发 progress），避免「上传」外层任务与「索引」内层任务嵌套成两个 taskId、
-   *               前端按第一个锚定后丢掉内层事件
-   * @param stepOffset 步骤起始编号（外层任务已用掉 step1/2 时从 3 开始）
-   * @returns 切片列表（含序号和 token 估算）
-   */
-  async indexDocument(kbId, documentId, content, names, taskId, stepOffset = 1) {
-    if (taskId) {
-      return this.vectorize(kbId, documentId, content, names, taskId, stepOffset);
-    }
-    return withTaskEvents(
-      "document_index" /* DOCUMENT_INDEX */,
-      { kbId, documentId, message: `\u7D22\u5F15\u6587\u6863 #${documentId}` },
-      (tid) => this.vectorize(kbId, documentId, content, names, tid, stepOffset)
-    );
-  }
-  /**
-   * 重建索引（编辑保存专用）：删除旧向量 → 内容就绪 → 数据清洗 → 重新切片 → 重新向量化
-   *
-   * 事件序列与前端 5 步条（重建索引/数据清洗/切片/向量化/完成）一一对应：
-   *   step(offset)     重建索引：删除旧向量
-   *   step(offset+1)   数据清洗完成（CRLF / BOM 归一）
-   *   step(offset+2)   切片完成（vectorize 发出）
-   *   step(offset+3)   向量化完成（vectorize 发出）
-   *
-   * 编辑内容来自编辑器（非文件），无需「解析」步骤；与新建链路（createDocument）
-   * 保持同一套步骤语义（数据清洗/切片/向量化/完成），仅多出「重建索引」第一步；
-   * 编辑内容同样走 normalizeParsedText 统一清洗，保证进入切片前的格式一致。
-   */
-  async reindexDocument(documentId, kbId, content, names, taskId, stepOffset = 1) {
-    const cleaned = normalizeParsedText(content, true);
-    if (taskId) {
-      await this.deleteByDocumentId(documentId);
-      emit(TaskEvent.PROGRESS, { taskId, taskType: "document_index" /* DOCUMENT_INDEX */, step: stepOffset, message: "\u91CD\u5EFA\u7D22\u5F15\uFF1A\u5220\u9664\u65E7\u5411\u91CF" });
-      emit(TaskEvent.PROGRESS, { taskId, taskType: "document_index" /* DOCUMENT_INDEX */, step: stepOffset + 1, message: "\u6570\u636E\u6E05\u6D17\u5B8C\u6210\uFF08CRLF / BOM \u5F52\u4E00\uFF09\uFF0C\u5F00\u59CB\u5207\u7247\u4E0E\u5411\u91CF\u5316" });
-      return this.vectorize(kbId, documentId, cleaned, names, taskId, stepOffset + 2);
-    }
-    return withTaskEvents("document_index" /* DOCUMENT_INDEX */, { kbId, documentId, message: `\u91CD\u5EFA\u7D22\u5F15\u6587\u6863 #${documentId}` }, async (tid) => {
-      await this.deleteByDocumentId(documentId);
-      emit(TaskEvent.PROGRESS, { taskId: tid, taskType: "document_index" /* DOCUMENT_INDEX */, step: 1, message: "\u91CD\u5EFA\u7D22\u5F15\uFF1A\u5220\u9664\u65E7\u5411\u91CF" });
-      emit(TaskEvent.PROGRESS, { taskId: tid, taskType: "document_index" /* DOCUMENT_INDEX */, step: 2, message: "\u6570\u636E\u6E05\u6D17\u5B8C\u6210\uFF08CRLF / BOM \u5F52\u4E00\uFF09\uFF0C\u5F00\u59CB\u5207\u7247\u4E0E\u5411\u91CF\u5316" });
-      return this.vectorize(kbId, documentId, cleaned, names, tid, 3);
-    });
-  }
-  /**
-   * 切片 + 向量化核心逻辑（不发 started/completed，由 withTaskEvents 统一发）
-   *
-   * @param taskId 任务 ID（用于发进度事件）
-   * @param stepOffset 步骤偏移（重建索引时前面多了"删旧向量"一步）
-   */
-  async vectorize(kbId, documentId, content, names, taskId, stepOffset = 1) {
-    const texts = await splitTextToChunks(content, { preserveTables: true });
-    if (texts.length === 0) return [];
-    emit(TaskEvent.PROGRESS, { taskId, taskType: "document_index" /* DOCUMENT_INDEX */, step: stepOffset, message: `\u5207\u7247\u5B8C\u6210\uFF08${texts.length} \u7247\uFF09\uFF0C\u5F00\u59CB\u5411\u91CF\u5316` });
-    const store = await this.getStore();
-    const docs = texts.map(
-      (text, i) => new Document2({
-        pageContent: text,
-        metadata: {
-          documentId,
+  /** 暂存新索引；只有 DB 中的 index_revision 切换后才对检索可见。 */
+  async prepareDocument(kbId, documentId, content, names, taskId, stepOffset = 1) {
+    const revision = randomUUID();
+    const run = async (tid) => {
+      const texts = await splitTextToChunks(normalizeParsedText(content, true), { preserveTables: true });
+      if (texts.length === 0) throw new Error("\u6587\u6863\u6CA1\u6709\u53EF\u7D22\u5F15\u7684\u6587\u672C");
+      emit(TaskEvent.PROGRESS, { taskId: tid, taskType: "document_index" /* DOCUMENT_INDEX */, step: stepOffset, message: `\u5207\u7247\u5B8C\u6210\uFF08${texts.length} \u7247\uFF09\uFF0C\u5F00\u59CB\u5411\u91CF\u5316` });
+      try {
+        const store = await this.getStore();
+        await store.addDocuments(
+          texts.map(
+            (text, i) => new Document2({
+              pageContent: text,
+              metadata: { documentId, kbId, chunkIndex: i + 1, revision, ...names }
+            })
+          )
+        );
+        await lexicalIndex.addChunks(
           kbId,
-          chunkIndex: i + 1,
-          kbName: names?.kbName,
-          documentName: names?.documentName
-        }
-      })
-    );
-    await store.addDocuments(docs);
-    await lexicalIndex.addChunks(
-      kbId,
-      documentId,
-      { kbName: names?.kbName, documentName: names?.documentName },
-      texts.map((text, i) => ({ content: text, index: i + 1 }))
-    );
-    emit(TaskEvent.PROGRESS, { taskId, taskType: "document_index" /* DOCUMENT_INDEX */, step: stepOffset + 1, message: "\u5411\u91CF\u5316\u5B8C\u6210" });
-    return texts.map((text, i) => ({
-      content: text,
-      index: i + 1,
-      tokenCount: Math.ceil(text.length / 2)
-    }));
+          documentId,
+          { ...names, revision },
+          texts.map((content2, i) => ({ content: content2, index: i + 1 }))
+        );
+        emit(TaskEvent.PROGRESS, { taskId: tid, taskType: "document_index" /* DOCUMENT_INDEX */, step: stepOffset + 1, message: "\u5411\u91CF\u5316\u5B8C\u6210" });
+        return { revision, chunks: texts.map((content2, i) => ({ content: content2, index: i + 1, tokenCount: Math.ceil(content2.length / 2) })) };
+      } catch (error) {
+        await this.discardRevision(documentId, revision);
+        throw error;
+      }
+    };
+    return taskId ? run(taskId) : withTaskEvents("document_index" /* DOCUMENT_INDEX */, { kbId, documentId }, run);
   }
-  /**
-   * 检索（统一混合模式：向量语义 + ES BM25 词法，RRF 融合）
-   *
-   * 两路各取候选，用 RRF 融合排名 —— rank 求和不用原始分，
-   * 天然规避"余弦分 0~1 与 BM25 分无上界"不可比的问题。
-   * 语义路长于近似匹配（"如何请假" 命中 "休假申请流程"），
-   * 词法路长于精确词（型号、错误码、人名等专有名词），两路互补。
-   *
-   * @param query 用户问题
-   * @param options.kbIds 限制在指定知识库
-   * @param options.k top-K
-   */
+  /** 独立脚本兼容入口；后端应 prepareDocument 后在同一个事务内写切片与激活版本。 */
+  async indexDocument(kbId, documentId, content, names, taskId, stepOffset = 1) {
+    const prepared = await this.prepareDocument(kbId, documentId, content, names, taskId, stepOffset);
+    try {
+      const store = await this.getStore();
+      const result = await store.pool.query("UPDATE knowledge_document SET index_revision = $1 WHERE id = $2 AND status IN (1, 2)", [prepared.revision, documentId]);
+      if (!result.rowCount) throw new Error("\u6587\u6863\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664");
+      return prepared.chunks;
+    } catch (error) {
+      await this.discardRevision(documentId, prepared.revision);
+      throw error;
+    }
+  }
+  /** 保留旧版本直到新版本成功激活。 */
+  async reindexDocument(documentId, kbId, content, names, taskId, stepOffset = 1) {
+    return this.indexDocument(kbId, documentId, content, names, taskId, stepOffset);
+  }
+  /** 清理失败的暂存版本；清理故障不会覆盖原始错误。 */
+  async discardRevision(documentId, revision) {
+    const results = await Promise.allSettled([this.deleteVectorRevision(documentId, revision), lexicalIndex.deleteByDocumentId(documentId, revision)]);
+    for (const result of results) {
+      if (result.status === "rejected") console.warn("\u6682\u5B58\u7D22\u5F15\u6E05\u7406\u5931\u8D25\uFF0C\u7248\u672C\u4ECD\u4E0D\u53EF\u68C0\u7D22", result.reason);
+    }
+  }
+  async deleteVectorRevision(documentId, revision) {
+    const store = await this.getStore();
+    await store.delete({ filter: { documentId, ...revision ? { revision } : {} } });
+  }
+  /** 在召回之前过滤删除、失败文档和非活跃版本，避免旧切片挤占 top-k。 */
+  async activeDocuments(kbIds) {
+    const store = await this.getStore();
+    const result = await store.pool.query(
+      `
+      SELECT d.id, COALESCE(d.index_revision, '') AS revision
+      FROM knowledge_document d JOIN knowledge_base kb ON kb.id = d.knowledge_base_id
+      WHERE d.status IN (1, 2) AND kb.status IN (1, 2)
+        AND ($1::int[] IS NULL OR kb.id = ANY($1::int[]))`,
+      [kbIds ?? null]
+    );
+    return result.rows;
+  }
   async search(query, options = {}) {
-    const { kbIds, k = 5 } = options;
+    const { kbIds, k = 5, mode = "hybrid" } = options;
+    if (!query.trim() || kbIds && !kbIds.length) return [];
+    if (!Number.isInteger(k) || k < 1 || k > 100) throw new Error("k \u5FC5\u987B\u4E3A 1~100 \u7684\u6574\u6570");
     const fetchK = Math.max(k * 2, 10);
     return withTaskEvents("rag_search" /* RAG_SEARCH */, { kbIds, message: `\u68C0\u7D22\uFF1A${query.slice(0, 50)}` }, async () => {
-      await this.getStore();
+      const active = await this.activeDocuments(kbIds);
+      if (!active.length) return [];
       const { rewritten } = await rewriteQuery(query);
-      const searchQuery = rewritten;
-      const lists = [
-        await this.semanticSearch(searchQuery, kbIds, fetchK),
-        await lexicalIndex.search(searchQuery, { kbIds, k: fetchK })
-      ];
+      const requests = [];
+      if (mode !== "keyword") requests.push(this.semanticSearch(rewritten, active, fetchK));
+      if (mode !== "semantic") requests.push(lexicalIndex.search(rewritten, { kbIds, k: fetchK, active }));
+      const settled = await Promise.allSettled(requests);
+      const lists = [];
+      for (const result of settled) {
+        if (result.status === "fulfilled") lists.push(result.value);
+        else console.warn("\u68C0\u7D22\u5355\u8DEF\u5931\u8D25", result.reason);
+      }
+      if (!lists.length) throw new Error("\u5411\u91CF\u4E0E\u5173\u952E\u8BCD\u68C0\u7D22\u5747\u4E0D\u53EF\u7528\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
       return fuseRrf(lists, k);
     });
   }
-  /** 向量相似度检索 */
-  async semanticSearch(query, kbIds, k) {
+  async semanticSearch(query, active, k) {
     const store = await this.getStore();
-    const filter = kbIds && kbIds.length > 0 ? { kbId: { in: kbIds } } : void 0;
-    const results = await store.similaritySearchWithScore(query, k, filter);
-    return results.map(([doc, score]) => {
-      const metadata = doc.metadata;
-      return {
-        content: doc.pageContent,
-        documentId: metadata.documentId,
-        kbId: metadata.kbId,
-        kbName: metadata.kbName,
-        documentName: metadata.documentName,
-        chunkIndex: metadata.chunkIndex,
-        score,
-        matchType: "semantic"
-      };
-    });
+    const vector = await this.embeddings.embedQuery(query);
+    const result = await store.pool.query(
+      `
+      SELECT v.content, v.metadata, 1 - (v.embedding <=> $1::vector) AS score
+      FROM ${RAG_TABLE_NAME} v
+      JOIN jsonb_to_recordset($2::jsonb) AS a(id int, revision text)
+        ON v.metadata->>'documentId' = a.id::text
+        AND COALESCE(v.metadata->>'revision', '') = a.revision
+      ORDER BY v.embedding <=> $1::vector LIMIT $3`,
+      [JSON.stringify(vector), JSON.stringify(active), k]
+    );
+    return result.rows.map(({ content, metadata, score }) => ({
+      content,
+      ...metadata,
+      score,
+      matchType: "semantic"
+    }));
   }
-  /**
-   * 删除某个文档的所有索引（向量 + BM25 词法）
-   *
-   * PGVectorStore 通过 metadata 过滤删除
-   */
+  /** 独立评测结束时释放连接。 */
+  async close() {
+    await Promise.all([this.vectorStore?.end(), lexicalIndex.close()]);
+    this.vectorStore = null;
+    this.storeReady = void 0;
+  }
   async deleteByDocumentId(documentId) {
-    const store = await this.getStore();
-    await store.delete({ filter: { documentId } });
-    await lexicalIndex.deleteByDocumentId(documentId);
+    const results = await Promise.allSettled([this.deleteVectorRevision(documentId), lexicalIndex.deleteByDocumentId(documentId)]);
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length) throw new Error("\u90E8\u5206\u7D22\u5F15\u6E05\u7406\u5931\u8D25\uFF0C\u53EF\u91CD\u8BD5\u6E05\u7406");
   }
 };
 function fuseRrf(lists, k) {
@@ -1386,20 +1406,19 @@ function fuseRrf(lists, k) {
 }
 function extractTableBlocks(text) {
   const lines = text.split("\n");
-  const tableBlocks = [];
-  const textBlocks = [];
+  const blocks = [];
   let current = [];
   let table = [];
   let inTable = false;
   const flushText = () => {
     if (current.length) {
-      textBlocks.push(current.join("\n"));
+      blocks.push({ text: current.join("\n"), table: false });
       current = [];
     }
   };
   const flushTable = () => {
     if (table.length) {
-      tableBlocks.push(table.join("\n"));
+      blocks.push({ text: table.join("\n"), table: true });
       table = [];
     }
   };
@@ -1439,22 +1458,23 @@ function extractTableBlocks(text) {
   }
   if (inTable) closeTable();
   flushText();
-  return { tableBlocks, textBlocks };
+  return blocks;
 }
 async function splitTextToChunks(text, options) {
   if (options?.preserveTables) {
-    const { tableBlocks, textBlocks } = extractTableBlocks(text);
-    const chunks = [...tableBlocks];
-    for (const block of textBlocks) {
-      chunks.push(...await splitTextInternal(block));
+    const chunks = [];
+    for (const block of extractTableBlocks(text)) {
+      chunks.push(...block.table ? [block.text] : await splitTextInternal(block.text));
     }
     return chunks.filter(Boolean);
   }
   return splitTextInternal(text);
 }
 async function splitTextInternal(text) {
-  const chunkSize = Number(process.env.CHUNK_SIZE) || 350;
-  const chunkOverlap = Number(process.env.CHUNK_OVERLAP) || 40;
+  const chunkSize = Number(process.env.CHUNK_SIZE ?? 350);
+  const chunkOverlap = Number(process.env.CHUNK_OVERLAP ?? 40);
+  if (!Number.isInteger(chunkSize) || chunkSize < 1 || !Number.isInteger(chunkOverlap) || chunkOverlap < 0 || chunkOverlap >= chunkSize)
+    throw new Error("\u5207\u7247\u53C2\u6570\u65E0\u6548\uFF1A\u987B\u6EE1\u8DB3 0 <= CHUNK_OVERLAP < CHUNK_SIZE");
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize,
     chunkOverlap,
@@ -1526,8 +1546,7 @@ function createKnowledgeSearchTool(kbIds, scope) {
       }
       return {
         content: [{ type: "text", text: formatResults(results) }],
-        details: results,
-        structuredContent: results
+        details: results
       };
     }
   });
@@ -1725,7 +1744,10 @@ var AiEngine = class {
       const queue = new AsyncEventQueue();
       session.subscribe((e) => queue.enqueue(e));
       const runPromise = session.prompt(input, { source: "rpc" });
-      runPromise.finally(() => queue.close());
+      void runPromise.then(
+        () => queue.close(),
+        () => queue.close()
+      );
       let ended = false;
       while (!ended) {
         const e = await queue.dequeue();
@@ -1782,5 +1804,6 @@ export {
   semanticizePdfFigures,
   splitTextToChunks,
   taskBus,
+  taskContext,
   withTaskEvents
 };

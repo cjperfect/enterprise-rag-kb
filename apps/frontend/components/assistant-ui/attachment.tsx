@@ -15,11 +15,13 @@ const useFileSrc = (file: File | undefined) => {
 
   useEffect(() => {
     if (!file) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 同步外部 File 对应的浏览器资源。
       setSrc(undefined);
       return;
     }
 
     const objectUrl = URL.createObjectURL(file);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- object URL 须在 effect 内创建、发布与回收。
     setSrc(objectUrl);
 
     return () => {

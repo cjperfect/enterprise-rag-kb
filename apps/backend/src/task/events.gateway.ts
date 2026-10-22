@@ -1,8 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
 import { Subject, type Observable } from "rxjs";
-import { TaskEvent } from "@langchain-rag/ai-engine";
-import type { TaskEventPayload } from "@langchain-rag/ai-engine";
+import { TaskEvent } from "@enterprise-rag-kb/ai-engine";
+import type { TaskEventPayload } from "@enterprise-rag-kb/ai-engine";
 
 /** 推送给前端的消息体：事件名 + 原始 payload */
 export interface TaskStreamMessage {

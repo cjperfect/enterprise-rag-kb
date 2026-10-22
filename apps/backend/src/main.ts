@@ -4,35 +4,45 @@ import { EventEmitter2 } from "@nestjs/event-emitter";
 import { AppModule } from "./app.module";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
-import { taskBus, TaskEvent } from "@langchain-rag/ai-engine";
+import { taskBus, TaskEvent } from "@enterprise-rag-kb/ai-engine";
 import { pino } from "pino";
 import { pinoHttp } from "pino-http";
 
 // 结构化日志根 logger：生产环境输出 JSON（接 ELK/Datadog 可检索），
 // 开发环境用 pino-pretty 输出彩色可读日志（pino-pretty 需装为 devDependency）
 const pinoRoot = pino({
+  redact: ["req.headers.authorization", "req.headers.cookie", 'res.headers["set-cookie"]'],
   level: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === "production" ? "info" : "debug"),
-  transport:
-    process.env.NODE_ENV !== "production"
-      ? { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } }
-      : undefined,
+  transport: process.env.NODE_ENV !== "production" ? { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } } : undefined,
 });
 
 // 把 pino 适配成 Nest LoggerService（Nest 要求 log/error/warn/verbose 方法）
 class PinoNestLogger {
   constructor(private readonly base: typeof pinoRoot) {}
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  log(msg: any, ...args: any[]) { this.base.info(String(msg), ...args); }
+  log(msg: any, ...args: any[]) {
+    this.base.info(String(msg), ...args);
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  info(msg: any, ...args: any[]) { this.base.info(String(msg), ...args); }
+  info(msg: any, ...args: any[]) {
+    this.base.info(String(msg), ...args);
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  warn(msg: any, ...args: any[]) { this.base.warn(String(msg), ...args); }
+  warn(msg: any, ...args: any[]) {
+    this.base.warn(String(msg), ...args);
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  error(msg: any, ...args: any[]) { this.base.error(String(msg), ...args); }
+  error(msg: any, ...args: any[]) {
+    this.base.error(String(msg), ...args);
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  debug(msg: any, ...args: any[]) { this.base.debug(String(msg), ...args); }
+  debug(msg: any, ...args: any[]) {
+    this.base.debug(String(msg), ...args);
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  verbose(msg: any, ...args: any[]) { this.base.debug(String(msg), ...args); }
+  verbose(msg: any, ...args: any[]) {
+    this.base.debug(String(msg), ...args);
+  }
 }
 
 // Prisma Pg adapter 返回原生 bigint，JSON.stringify 默认不支持序列化。
@@ -110,4 +120,7 @@ async function bootstrap() {
   pinoRoot.info(`Server is running on port: ${process.env.PORT ?? 3001}`);
   await app.listen(process.env.PORT ?? 3001);
 }
-bootstrap();
+void bootstrap().catch((error: unknown) => {
+  pinoRoot.error(error);
+  process.exitCode = 1;
+});

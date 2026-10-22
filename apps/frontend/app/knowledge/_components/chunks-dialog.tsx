@@ -45,27 +45,29 @@ const chunkMarkdownComponents = {
  * 切片是 RAG 检索的基本单元，这里按 index 顺序展示全文分片，
  * 便于检查解析质量（切片是否断裂、内容是否完整）与检索命中范围。
  */
-export function ChunksDialog({
-  open,
-  onOpenChange,
-  documentId,
-  fileName,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  documentId: number;
-  fileName: string;
-}) {
+export function ChunksDialog(props: Parameters<typeof ChunksContent>[0]) {
+  return <ChunksContent key={`${props.open}:${props.documentId}`} {...props} />;
+}
+
+function ChunksContent({ open, onOpenChange, documentId, fileName }: { open: boolean; onOpenChange: (open: boolean) => void; documentId: number; fileName: string }) {
   const [chunks, setChunks] = useState<DocumentChunk[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setChunks(null);
-    setError(null);
-    getDocumentChunks(documentId)
-      .then(setChunks)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "加载切片失败"));
+    let active = true;
+    async function load() {
+      try {
+        const data = await getDocumentChunks(documentId);
+        if (active) setChunks(data);
+      } catch (error) {
+        if (active) setError(error instanceof Error ? error.message : "加载切片失败");
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+    };
   }, [open, documentId]);
 
   const totalTokens = chunks?.reduce((sum, c) => sum + c.tokenCount, 0) ?? 0;
@@ -78,9 +80,7 @@ export function ChunksDialog({
             <FileText className="size-4 text-muted-foreground" />
             文档切片：{fileName}
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            {chunks ? `共 ${chunks.length} 片 · 约 ${totalTokens} tokens` : "加载中..."}
-          </DialogDescription>
+          <DialogDescription className="text-xs">{chunks ? `共 ${chunks.length} 片 · 约 ${totalTokens} tokens` : "加载中..."}</DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -106,9 +106,7 @@ export function ChunksDialog({
               {chunks.map((chunk) => (
                 <div key={chunk.id} className="rounded-lg border bg-muted/20 p-3">
                   <div className="mb-1.5 flex items-center gap-2">
-                    <span className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-                      切片 #{chunk.index}
-                    </span>
+                    <span className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">切片 #{chunk.index}</span>
                     <span className="text-xs text-muted-foreground">≈ {chunk.tokenCount} tokens</span>
                   </div>
                   <div className="prose-chunk text-[13px] leading-relaxed text-foreground/85">

@@ -1,3 +1,4 @@
+import { CurrentUser } from "../auth/current-user.decorator";
 import { Controller, Query, Sse } from "@nestjs/common";
 import type { MessageEvent } from "@nestjs/common";
 import { filter, interval, map, merge, type Observable } from "rxjs";
@@ -20,17 +21,22 @@ export class EventsController {
   constructor(private readonly gateway: EventsGateway) {}
 
   @Sse("stream")
-  stream(@Query("types") types?: string): Observable<MessageEvent> {
-    const wanted = types ? new Set(types.split(",").map((t) => t.trim()).filter(Boolean)) : null;
+  stream(@CurrentUser() user: { id: number }, @Query("types") types?: string): Observable<MessageEvent> {
+    const wanted = types
+      ? new Set(
+          types
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
+        )
+      : null;
 
     // 心跳：定期发一条空消息，维持连接不被中间层回收
-    const heartbeat$: Observable<MessageEvent> = interval(HEARTBEAT_MS).pipe(
-      map(() => ({ data: JSON.stringify({ name: PING_EVENT, payload: null }) })),
-    );
+    const heartbeat$: Observable<MessageEvent> = interval(HEARTBEAT_MS).pipe(map(() => ({ data: JSON.stringify({ name: PING_EVENT, payload: null }) })));
 
     // 业务事件：按 taskType 过滤后透传
     const tasks$: Observable<MessageEvent> = this.gateway.events$.pipe(
-      filter((m) => !wanted || wanted.has(m.payload.taskType)),
+      filter((m) => m.payload.userId === user.id && (!wanted || wanted.has(m.payload.taskType))),
       map((m) => ({ data: JSON.stringify(m) })),
     );
 

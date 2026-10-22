@@ -55,22 +55,20 @@ function EventIcon({ name }: { name: string }) {
   }
 }
 
-export function TaskProgressPanel({
-  enabled,
-  active,
-  labels,
-  fallbackDone = false,
-  fallbackError = null,
-  onCompleted,
-  resetKey = 0,
-}: TaskProgressPanelProps) {
-  const [phase, setPhase] = useState<TaskProgressPhase>("idle");
+export function TaskProgressPanel(props: TaskProgressPanelProps) {
+  return <TaskProgressContent key={`${props.active}:${props.resetKey ?? 0}`} {...props} />;
+}
+
+function TaskProgressContent({ enabled, active, labels, fallbackDone = false, fallbackError = null, onCompleted }: TaskProgressPanelProps) {
+  const [eventPhase, setPhase] = useState<TaskProgressPhase>(active ? "running" : "idle");
+  const phase = fallbackError ? "failed" : fallbackDone ? "done" : eventPhase;
   const [items, setItems] = useState<TimelineItem[]>([]);
-  const [error, setError] = useState("");
+  const [eventError, setError] = useState("");
+  const error = eventError || fallbackError || "";
   /** 渐进点亮的「已显示步数」：目标值 completedSteps，每 200ms 追 1 步 */
   const [displayStep, setDisplayStep] = useState(0);
 
-  const phaseRef = useRef<TaskProgressPhase>("idle");
+  const phaseRef = useRef<TaskProgressPhase>(active ? "running" : "idle");
   const taskIdRef = useRef<string | null>(null);
   const sawEventRef = useRef(false);
 
@@ -78,17 +76,6 @@ export function TaskProgressPanel({
     phaseRef.current = next;
     setPhase(next);
   };
-
-  // active 或 resetKey 变化 → 清空并进入 running
-  useEffect(() => {
-    if (!active) return;
-    taskIdRef.current = null;
-    sawEventRef.current = false;
-    setItems([]);
-    setError("");
-    setDisplayStep(0);
-    setPhaseAll("running");
-  }, [active, resetKey]);
 
   const handleMessage = (message: TaskStreamMessage) => {
     const payload = message.payload;
@@ -118,19 +105,6 @@ export function TaskProgressPanel({
 
   const stream = useTaskEventStream({ types: ["document_index"], enabled, onMessage: handleMessage });
 
-  // HTTP 兜底：成功但 SSE 完全没收到事件（连接未建立 / 事件已错过）
-  useEffect(() => {
-    if (fallbackDone && phase === "running" && !sawEventRef.current) setPhaseAll("done");
-  }, [fallbackDone, phase]);
-
-  // HTTP 失败兜底（SSE failed 优先，不覆盖更具体的原因）
-  useEffect(() => {
-    if (fallbackError && phase === "running") {
-      setError(fallbackError);
-      setPhaseAll("failed");
-    }
-  }, [fallbackError, phase]);
-
   /** 已完成的步骤数：progress step=N 表示第 N 步完成，completed / done 点亮最后一步 */
   const completedSteps = useMemo(() => {
     if (phase === "failed") return 0;
@@ -159,10 +133,9 @@ export function TaskProgressPanel({
   const chunkCount = Array.isArray(completedResult)
     ? completedResult.length
     : completedResult && typeof completedResult === "object" && "chunkCount" in completedResult
-      ? (completedResult as { chunkCount?: number }).chunkCount ?? null
+      ? ((completedResult as { chunkCount?: number }).chunkCount ?? null)
       : null;
-  const durationText =
-    completedItem?.payload.durationMs != null ? `${(completedItem.payload.durationMs / 1000).toFixed(1)}s` : null;
+  const durationText = completedItem?.payload.durationMs != null ? `${(completedItem.payload.durationMs / 1000).toFixed(1)}s` : null;
 
   if (phase === "idle") return null; // 未开始不渲染
 
@@ -183,34 +156,16 @@ export function TaskProgressPanel({
           const activeStep = phase === "running" && i === displayStep;
           return (
             <Fragment key={label}>
-              {i > 0 ? (
-                <div className={`h-0.5 flex-1 rounded ${i <= displayStep ? "bg-emerald-500" : "bg-border"}`} />
-              ) : null}
+              {i > 0 ? <div className={`h-0.5 flex-1 rounded ${i <= displayStep ? "bg-emerald-500" : "bg-border"}`} /> : null}
               <div className="flex w-14 flex-col items-center gap-1">
                 <span
                   className={`flex size-6 items-center justify-center rounded-full text-xs ${
-                    done
-                      ? "bg-emerald-500 text-white"
-                      : activeStep
-                        ? "border-2 border-primary text-primary"
-                        : "border-2 border-border text-muted-foreground"
+                    done ? "bg-emerald-500 text-white" : activeStep ? "border-2 border-primary text-primary" : "border-2 border-border text-muted-foreground"
                   }`}
                 >
-                  {done ? (
-                    <Check className="size-3.5" />
-                  ) : activeStep ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    i + 1
-                  )}
+                  {done ? <Check className="size-3.5" /> : activeStep ? <Loader2 className="size-3.5 animate-spin" /> : i + 1}
                 </span>
-                <span
-                  className={`whitespace-nowrap text-xs ${
-                    done ? "text-emerald-600" : activeStep ? "font-medium text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  {label}
-                </span>
+                <span className={`whitespace-nowrap text-xs ${done ? "text-emerald-600" : activeStep ? "font-medium text-foreground" : "text-muted-foreground"}`}>{label}</span>
               </div>
             </Fragment>
           );
@@ -232,9 +187,7 @@ export function TaskProgressPanel({
               </span>
               <span className="min-w-0 flex-1 break-words">
                 {item.payload.message ?? item.name}
-                {item.payload.step != null ? (
-                  <span className="ml-1.5 text-xs text-muted-foreground">步骤 {item.payload.step}</span>
-                ) : null}
+                {item.payload.step != null ? <span className="ml-1.5 text-xs text-muted-foreground">步骤 {item.payload.step}</span> : null}
               </span>
             </div>
           ))

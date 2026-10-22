@@ -10,7 +10,7 @@
 import type { RemoteThreadListAdapter, ThreadHistoryAdapter } from "@assistant-ui/react";
 import { RuntimeAdapterProvider, useAuiState } from "@assistant-ui/react";
 import { createAssistantStream } from "assistant-stream";
-import type { ExportedMessageRepository } from "@assistant-ui/react";
+import type { ExportedMessageRepository, ThreadMessage } from "@assistant-ui/react";
 import { get, post, patch, del } from "@/lib/api";
 import { useMemo, type FC, type PropsWithChildren } from "react";
 import type { RemoteThreadMetadata, RemoteThreadListResponse, ConversationItem, BackendMessage } from "@/interfaces/chat";
@@ -31,7 +31,6 @@ const HistoryProvider: FC<PropsWithChildren> = ({ children }) => {
           const msgs = await get<BackendMessage[]>(`/conversations/${convId}/messages`);
           if (!msgs.length) return { messages: [] };
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const items = msgs.map((m) => ({
             parentId: m.parentId ? String(m.parentId) : null,
             message: {
@@ -39,13 +38,14 @@ const HistoryProvider: FC<PropsWithChildren> = ({ children }) => {
               role: m.role,
               content: [{ type: "text" as const, text: m.content ?? "" }],
               metadata: { custom: {} },
-              status: { type: "complete" as const },
-            } as any,
+              status: { type: "complete" as const, reason: "stop" as const },
+              createdAt: new Date(m.createdAt),
+            } as ThreadMessage,
           }));
 
           return {
             headId: String(msgs[msgs.length - 1].id),
-            messages: items as any,
+            messages: items,
           };
         } catch {
           return { messages: [] };
@@ -118,7 +118,7 @@ export function createRemoteThreadListAdapter(options?: { knowledgeId?: number; 
     },
 
     /** 新建会话 → POST /api/conversations */
-    async initialize(_threadId: string): Promise<{ remoteId: string; externalId: string | undefined }> {
+    async initialize(): Promise<{ remoteId: string; externalId: string | undefined }> {
       const body: Record<string, unknown> = { title: defaultTitle };
       if (knowledgeId && knowledgeId > 0) body.knowledgeId = knowledgeId;
       console.log("[initialize] body:", JSON.stringify(body), "knowledgeId:", knowledgeId);
@@ -166,16 +166,16 @@ export function createRemoteThreadListAdapter(options?: { knowledgeId?: number; 
         /* 后端已处理所有 fallback，这里忽略 */
       }
 
-      return createAssistantStream((_controller) => {});
+      return createAssistantStream(() => {});
     },
 
     /** 归档 — 暂不启用 */
-    async archive(_remoteId: string): Promise<void> {
+    async archive(): Promise<void> {
       // no-op
     },
 
     /** 取消归档 */
-    async unarchive(_remoteId: string): Promise<void> {
+    async unarchive(): Promise<void> {
       // no-op
     },
   };

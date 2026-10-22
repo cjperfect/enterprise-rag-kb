@@ -267,9 +267,7 @@ export function UploadDocumentDialog({ open, onOpenChange, kbId, onCreated }: Up
     return () => clearTimeout(timer);
   }, [completedSteps, displayStep]);
 
-  const modeLabel = parseMeta?.mode
-    ? { "text-layer": "纯文本层", "baidu-doc-analysis": "纯扫描 OCR", mixed: "混合路由" }[parseMeta.mode] ?? parseMeta.mode
-    : null;
+  const modeLabel = parseMeta?.mode ? ({ "text-layer": "纯文本层", "baidu-doc-analysis": "纯扫描 OCR", mixed: "混合路由" }[parseMeta.mode] ?? parseMeta.mode) : null;
 
   return (
     <Dialog
@@ -321,13 +319,7 @@ export function UploadDocumentDialog({ open, onOpenChange, kbId, onCreated }: Up
                   <p className="text-sm font-medium">拖拽文件到此处或点击选择</p>
                   <p className="text-xs text-muted-foreground mt-1">PDF · Markdown</p>
                 </div>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.md,.markdown"
-                  onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-                />
+                <input ref={inputRef} type="file" className="hidden" accept=".pdf,.md,.markdown" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
               </div>
             )
           ) : phase === "parsed" ? (
@@ -355,9 +347,7 @@ export function UploadDocumentDialog({ open, onOpenChange, kbId, onCreated }: Up
               {/* 解析文本编辑区：解析产物原样展示，用户可直接修正后再入库 */}
               <div>
                 <div className="mb-1 flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    解析产物（{parsedContent.length.toLocaleString()} 字符）· 可直接编辑，点击「确认入库」才真正存库
-                  </p>
+                  <p className="text-xs text-muted-foreground">解析产物（{parsedContent.length.toLocaleString()} 字符）· 可直接编辑，点击「确认入库」才真正存库</p>
                   <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs" onClick={() => setParsedContent(originalContent)} title="恢复为解析原文">
                     <RefreshCw className="size-3" />
                     恢复原文
@@ -380,13 +370,9 @@ export function UploadDocumentDialog({ open, onOpenChange, kbId, onCreated }: Up
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{file?.name ?? "文档"}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {file ? `${(file.size / 1024).toFixed(0)} KB` : ""}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{file ? `${(file.size / 1024).toFixed(0)} KB` : ""}</p>
                 </div>
-                {phase === "parsing" || phase === "indexing" ? (
-                  <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-                ) : null}
+                {phase === "parsing" || phase === "indexing" ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : null}
               </div>
 
               {/* 事件流连接状态：绿点表示进度会实时推送 */}
@@ -400,43 +386,29 @@ export function UploadDocumentDialog({ open, onOpenChange, kbId, onCreated }: Up
               {/* 分步流程条：解析与入库两阶段都渲染（5 步贯穿全流程；
                   解析阶段走到「数据清洗」即停，入库阶段走完 4 步 + 完成） */}
               {phase === "parsing" || phase === "indexing" ? (
-              <div className="flex items-center py-1">
-                {steps.map((label, i) => {
-                  const done = i < displayStep;
-                  const active = (phase === "parsing" || phase === "indexing") && i === displayStep;
-                  return (
-                    <Fragment key={label}>
-                      {i > 0 ? <div className={`h-0.5 flex-1 rounded ${i <= displayStep ? "bg-emerald-500" : "bg-border"}`} /> : null}
-                      <div className="flex w-14 flex-col items-center gap-1">
-                        <span
-                          className={`flex size-6 items-center justify-center rounded-full text-xs ${
-                            done
-                              ? "bg-emerald-500 text-white"
-                              : active
-                                ? "border-2 border-primary text-primary"
-                                : "border-2 border-border text-muted-foreground"
-                          }`}
-                        >
-                          {done ? (
-                            <Check className="size-3.5" />
-                          ) : active ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            i + 1
-                          )}
-                        </span>
-                        <span
-                          className={`whitespace-nowrap text-xs ${
-                            done ? "text-emerald-600" : active ? "font-medium text-foreground" : "text-muted-foreground"
-                          }`}
-                        >
-                          {label}
-                        </span>
-                      </div>
-                    </Fragment>
-                  );
-                })}
-              </div>
+                <div className="flex items-center py-1">
+                  {steps.map((label, i) => {
+                    const done = i < displayStep;
+                    const active = (phase === "parsing" || phase === "indexing") && i === displayStep;
+                    return (
+                      <Fragment key={label}>
+                        {i > 0 ? <div className={`h-0.5 flex-1 rounded ${i <= displayStep ? "bg-emerald-500" : "bg-border"}`} /> : null}
+                        <div className="flex w-14 flex-col items-center gap-1">
+                          <span
+                            className={`flex size-6 items-center justify-center rounded-full text-xs ${
+                              done ? "bg-emerald-500 text-white" : active ? "border-2 border-primary text-primary" : "border-2 border-border text-muted-foreground"
+                            }`}
+                          >
+                            {done ? <Check className="size-3.5" /> : active ? <Loader2 className="size-3.5 animate-spin" /> : i + 1}
+                          </span>
+                          <span className={`whitespace-nowrap text-xs ${done ? "text-emerald-600" : active ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                            {label}
+                          </span>
+                        </div>
+                      </Fragment>
+                    );
+                  })}
+                </div>
               ) : null}
 
               <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border bg-muted/20 p-3">
@@ -453,9 +425,7 @@ export function UploadDocumentDialog({ open, onOpenChange, kbId, onCreated }: Up
                       </span>
                       <span className="min-w-0 flex-1 break-words">
                         {item.payload.message ?? item.name}
-                        {item.payload.step != null ? (
-                          <span className="ml-1.5 text-xs text-muted-foreground">步骤 {item.payload.step}</span>
-                        ) : null}
+                        {item.payload.step != null ? <span className="ml-1.5 text-xs text-muted-foreground">步骤 {item.payload.step}</span> : null}
                       </span>
                     </div>
                   ))
@@ -488,7 +458,7 @@ export function UploadDocumentDialog({ open, onOpenChange, kbId, onCreated }: Up
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 取消
               </Button>
-              <Button onClick={handleParse} disabled={!file} className="gap-2 ml-2">
+              <Button onClick={() => void handleParse()} disabled={!file} className="gap-2 ml-2">
                 <File className="size-4" />
                 上传并解析
               </Button>
@@ -507,7 +477,7 @@ export function UploadDocumentDialog({ open, onOpenChange, kbId, onCreated }: Up
               <Button variant="outline" onClick={() => setPhaseAll("select")}>
                 上一步
               </Button>
-              <Button onClick={handleConfirm} disabled={!parsedContent.trim()} className="gap-2 ml-2">
+              <Button onClick={() => void handleConfirm()} disabled={!parsedContent.trim()} className="gap-2 ml-2">
                 <Database className="size-4" />
                 确认入库
               </Button>

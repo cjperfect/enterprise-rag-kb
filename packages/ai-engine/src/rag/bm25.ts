@@ -18,7 +18,7 @@
  *   ES_URL   Elasticsearch 地址（默认 http://localhost:9200）
  */
 import { Client } from "@elastic/elasticsearch";
-import type { ChunkData, LexicalChunk, LexicalHit, RagSearchResult } from "../interfaces/rag";
+import type { ActiveDocument, ChunkData, LexicalChunk, LexicalHit, RagSearchResult } from "../interfaces/rag";
 import { LEXICAL_INDEX_NAME } from "../constants/rag";
 
 export class LexicalIndexService {
@@ -29,6 +29,10 @@ export class LexicalIndexService {
   attach(): void {
     if (this.ready) return;
     this.ready = this.init();
+    // 清除失败的初始化状态，下一次调用可以重连。
+    void this.ready.catch(() => {
+      this.ready = null;
+    });
   }
 
   private async init(): Promise<void> {
@@ -43,6 +47,7 @@ export class LexicalIndexService {
         index: LEXICAL_INDEX_NAME,
         mappings: {
           properties: {
+            revision_key: { type: "keyword" },
             document_id: { type: "keyword" },
             kb_id: { type: "keyword" },
             chunk_index: { type: "integer" },
@@ -52,6 +57,8 @@ export class LexicalIndexService {
           },
         },
       });
+    } else {
+      await this.client.indices.putMapping({ index: LEXICAL_INDEX_NAME, properties: { revision_key: { type: "keyword" } } });
     }
   }
 
@@ -64,13 +71,14 @@ export class LexicalIndexService {
   async addChunks(
     kbId: number,
     documentId: number,
-    names: { kbName?: string; documentName?: string },
+    names: { kbName?: string; documentName?: string; revision?: string },
     chunks: Array<Pick<ChunkData, "index" | "content">>,
   ): Promise<void> {
     await this.waitReady();
     if (chunks.length === 0) return;
     await this.insertChunks(
       chunks.map((c) => ({
+        revision: names.revision,
         index: c.index,
         content: c.content,
         kbId,
@@ -87,8 +95,9 @@ export class LexicalIndexService {
     for (let i = 0; i < chunks.length; i += BATCH) {
       const batch = chunks.slice(i, i + BATCH);
       const operations = batch.flatMap((c) => [
-        { index: { _index: LEXICAL_INDEX_NAME } },
+        { index: { _index: LEXICAL_INDEX_NAME, _id: `${c.documentId}:${c.revision ?? "legacy"}:${c.index}` } },
         {
+          revision_key: `${c.documentId}:${c.revision ?? ""}`,
           document_id: c.documentId,
           kb_id: c.kbId,
           chunk_index: c.index,
@@ -105,20 +114,28 @@ export class LexicalIndexService {
     }
   }
 
+  /** 独立评测结束时释放连接。 */
+  async close(): Promise<void> {
+    await this.client?.close();
+    this.client = null;
+    this.ready = null;
+  }
+
   /** 删除某文档的全部词法索引 */
-  async deleteByDocumentId(documentId: number): Promise<void> {
+  async deleteByDocumentId(documentId: number, revision?: string): Promise<void> {
     await this.waitReady();
     await this.client!.deleteByQuery({
       index: LEXICAL_INDEX_NAME,
-      query: { term: { document_id: documentId } },
+      query: { bool: { filter: [{ term: { document_id: documentId } }, ...(revision ? [{ term: { revision_key: `${documentId}:${revision}` } }] : [])] } },
       refresh: true,
     });
   }
 
   /** BM25 关键词检索（match 查询 = ES 默认 BM25 打分，kbId 过滤） */
-  async search(query: string, options: { kbIds?: number[]; k?: number } = {}): Promise<RagSearchResult[]> {
+  async search(query: string, options: { kbIds?: number[]; k?: number; active?: ActiveDocument[] } = {}): Promise<RagSearchResult[]> {
     await this.waitReady();
-    const { kbIds, k = 5 } = options;
+    const { kbIds, k = 5, active } = options;
+    if ((active && !active.length) || (kbIds && !kbIds.length)) return [];
     if (!query.trim()) return [];
 
     const res = await this.client!.search<LexicalHit>({
@@ -127,7 +144,22 @@ export class LexicalIndexService {
       track_scores: true,
       query: {
         bool: {
-          filter: kbIds && kbIds.length > 0 ? [{ terms: { kb_id: kbIds } }] : [],
+          filter: [
+            ...(kbIds ? [{ terms: { kb_id: kbIds } }] : []),
+            ...(active
+              ? [
+                  {
+                    bool: {
+                      minimum_should_match: 1,
+                      should: [
+                        { terms: { revision_key: active.map((d) => `${d.id}:${d.revision}`) } },
+                        { bool: { filter: [{ terms: { document_id: active.filter((d) => !d.revision).map((d) => d.id) } }], must_not: [{ exists: { field: "revision_key" } }] } },
+                      ],
+                    },
+                  },
+                ]
+              : []),
+          ],
           must: [{ match: { content: query } }],
         },
       },

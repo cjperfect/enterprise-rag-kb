@@ -79,7 +79,8 @@ function upgradeLineBreaksPreservingTables(text: string): string {
 const markdownComponents: ComponentProps<typeof Markdown>["components"] = {
   code({ className, children, node: _node, ...props }) {
     const match = /language-(\w+)/.exec(className ?? "");
-    const codeStr = String(children).replace(/\n$/, "");
+    void _node;
+    const codeStr = (Array.isArray(children) ? children.join("") : typeof children === "string" ? children : "").replace(/\n$/, "");
 
     if (!match) {
       return (
@@ -163,8 +164,8 @@ export function DocumentViewer({ content, fileName, loading, knowledgeBaseId, do
     setFallbackDone(false);
     setFallbackError(null);
     try {
-      const md = editorRef.current?.getMarkdown?.() ?? htmlToMd(editorRef.current?.getHTML?.() ?? "");
-      await updateDocument(documentId!, { content: md });
+      const md = htmlToMd(editorRef.current?.getHTML?.() ?? "");
+      await updateDocument(documentId, { content: md });
       // HTTP 成功即重建成功：SSE 无事件时用它兜底；留一点时间让事件渲染
       setFallbackDone(true);
       setTimeout(finishSave, 600);
@@ -236,7 +237,7 @@ export function DocumentViewer({ content, fileName, loading, knowledgeBaseId, do
               <Button variant="ghost" size="icon" className="size-7" onClick={cancelEdit} title="取消">
                 <X className="size-3.5" />
               </Button>
-              <Button variant="default" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleSave} disabled={saving}>
+              <Button variant="default" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => void handleSave()} disabled={saving}>
                 <Save className="size-3" />
                 {saving ? "保存中..." : "保存"}
               </Button>
@@ -294,14 +295,7 @@ export function DocumentViewer({ content, fileName, loading, knowledgeBaseId, do
         </div>
       )}
       {/* 文档切片弹窗：展示该文档所有 chunk（Dialog 走 portal，放容器内即可） */}
-      {canEdit && (
-        <ChunksDialog
-          open={chunksOpen}
-          onOpenChange={setChunksOpen}
-          documentId={documentId!}
-          fileName={fileName}
-        />
-      )}
+      {canEdit && <ChunksDialog open={chunksOpen} onOpenChange={setChunksOpen} documentId={documentId} fileName={fileName} />}
     </div>
   );
 }

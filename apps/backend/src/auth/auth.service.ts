@@ -1,8 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../prisma/prisma.service";
 import { Exceptions, BusinessException } from "../common/exceptions/business.exception";
-import { ErrorCode } from "@langchain-rag/shared";
+import { ErrorCode } from "@enterprise-rag-kb/shared";
 import * as bcrypt from "bcryptjs";
 import type { RegisterDto, LoginDto } from "./dto/auth.dto";
 
@@ -13,8 +13,22 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
+  private validateCredentials(dto: LoginDto) {
+    if (
+      !dto ||
+      typeof dto.email !== "string" ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dto.email) ||
+      typeof dto.password !== "string" ||
+      dto.password.length < 8 ||
+      dto.password.length > 128
+    )
+      throw new BadRequestException("请输入有效邮箱和 8~128 位密码");
+  }
+
   /** 注册 */
   async register(dto: RegisterDto) {
+    this.validateCredentials(dto);
+    if (typeof dto.name !== "string" || !dto.name.trim()) throw new BadRequestException("请输入用户名");
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -37,6 +51,7 @@ export class AuthService {
 
   /** 登录 */
   async login(dto: LoginDto) {
+    this.validateCredentials(dto);
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });

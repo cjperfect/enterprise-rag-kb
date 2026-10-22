@@ -105,7 +105,6 @@ export function createKnowledgeSearchTool(kbIds: number[], scope: RetrievalScope
       return {
         content: [{ type: "text", text: formatResults(results) }],
         details: results,
-        structuredContent: results,
       };
     },
   });

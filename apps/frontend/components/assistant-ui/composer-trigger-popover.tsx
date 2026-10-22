@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useRef, type ComponentPropsWithoutRef, type FC } from "react";
+import { useEffect, memo, useRef, type ComponentPropsWithoutRef, type FC } from "react";
 import {
   ComposerPrimitive,
   unstable_defaultDirectiveFormatter,
@@ -62,7 +62,7 @@ type ComposerTriggerPopoverProps = ComposerTriggerPopoverBaseProps &
   );
 
 function resolveIcon(iconKey: string | undefined, iconMap: Record<string, IconComponent> | undefined, fallback: IconComponent): IconComponent {
-  if (iconKey && iconMap?.[iconKey]) return iconMap[iconKey]!;
+  if (iconKey && iconMap?.[iconKey]) return iconMap[iconKey];
   return fallback;
 }
 
@@ -161,10 +161,12 @@ const ComposerTriggerPopoverImpl: FC<ComposerTriggerPopoverProps> = ({
   ...props
 }) => {
   const warnedRef = useRef(false);
-  if (process.env.NODE_ENV !== "production" && !warnedRef.current && Boolean(directive) === Boolean(action)) {
-    warnedRef.current = true;
-    console.warn("[assistant-ui] ComposerTriggerPopover requires exactly one of `directive` or `action` props.");
-  }
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" && !warnedRef.current && Boolean(directive) === Boolean(action)) {
+      warnedRef.current = true;
+      console.warn("[assistant-ui] ComposerTriggerPopover requires exactly one of `directive` or `action` props.");
+    }
+  }, [directive, action]);
 
   return (
     <ComposerPrimitive.Unstable_TriggerPopover

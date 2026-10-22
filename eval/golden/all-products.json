@@ -1,34 +1,52 @@
 [
   {
-    "id": "n6-001",
-    "query": "N6 mini 电池容量是多少？",
+    "id": "n6-01",
+    "query": "N6 mini 电池容量多少？",
     "expect_doc": "N6 mini",
     "expect_keywords": [
       "1800 mAh"
     ],
-    "type": "table"
+    "type": "text"
   },
   {
-    "id": "n6-002",
+    "id": "n6-02",
     "query": "N6 mini 充满电要多久？",
     "expect_doc": "N6 mini",
     "expect_keywords": [
       "2.5 小时"
     ],
-    "type": "table"
+    "type": "text"
   },
   {
-    "id": "n6-003",
-    "query": "哪些人不能用 N6 mini？",
+    "id": "n6-03",
+    "query": "N6 mini 净重多少？",
     "expect_doc": "N6 mini",
     "expect_keywords": [
-      "心脏起搏器"
+      "210 g"
     ],
     "type": "text"
   },
   {
-    "id": "n6-004",
-    "query": "N6 mini 充电时灯是什么颜色？",
+    "id": "n6-04",
+    "query": "N6 mini 脉冲强度几档？",
+    "expect_doc": "N6 mini",
+    "expect_keywords": [
+      "6 档"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n6-05",
+    "query": "戴心脏起搏器能用 N6 mini 吗？",
+    "expect_doc": "N6 mini",
+    "expect_keywords": [
+      "禁用"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n6-06",
+    "query": "N6 mini 充电时灯什么颜色？",
     "expect_doc": "N6 mini",
     "expect_keywords": [
       "红色"
@@ -36,125 +54,718 @@
     "type": "text"
   },
   {
-    "id": "nd5-001",
-    "query": "NeckD5 的热敷温度是多少？",
-    "expect_doc": "NeckD5",
+    "id": "n6-07",
+    "query": "N6 mini 指示灯橙色闪烁啥意思？",
+    "expect_doc": "N6 mini",
+    "expect_keywords": [
+      "故障"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n6-08",
+    "query": "N6 mini 长期不用怎么保养电池？",
+    "expect_doc": "N6 mini",
+    "expect_keywords": [
+      "每三个月充电"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "nd5-01",
+    "query": "Neck D5 热敷温度多少？",
+    "expect_doc": "Neck D5",
     "expect_keywords": [
       "42°C"
     ],
-    "type": "table"
+    "type": "text"
   },
   {
-    "id": "nd5-002",
-    "query": "NeckD5 有多少种按摩模式？",
-    "expect_doc": "NeckD5",
+    "id": "nd5-02",
+    "query": "Neck D5 有几种按摩模式？",
+    "expect_doc": "Neck D5",
     "expect_keywords": [
       "8 种"
     ],
-    "type": "table"
+    "type": "text"
   },
   {
-    "id": "nd5-003",
-    "query": "NeckD5 热敷一次能开多久？",
-    "expect_doc": "NeckD5",
+    "id": "nd5-03",
+    "query": "Neck D5 强度几档？",
+    "expect_doc": "Neck D5",
+    "expect_keywords": [
+      "12 档"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "nd5-04",
+    "query": "Neck D5 电池多大？",
+    "expect_doc": "Neck D5",
+    "expect_keywords": [
+      "2400 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "nd5-05",
+    "query": "Neck D5 热敷一次开多久？",
+    "expect_doc": "Neck D5",
     "expect_keywords": [
       "20 分钟"
     ],
     "type": "text"
   },
   {
-    "id": "n5-001",
-    "query": "N5 防水等级是多少？",
-    "expect_doc": "N5",
+    "id": "nd5-06",
+    "query": "Neck D5 怎么开机？",
+    "expect_doc": "Neck D5",
     "expect_keywords": [
-      "IPX4"
-    ],
-    "type": "table"
-  },
-  {
-    "id": "n5-002",
-    "query": "N5 电极片多久换一次？",
-    "expect_doc": "N5",
-    "expect_keywords": [
-      "30 次"
+      "长按电源",
+      "2 秒"
     ],
     "type": "text"
   },
   {
-    "id": "id5-001",
-    "query": "iDream 5s 多重？",
-    "expect_doc": "iDream",
+    "id": "nd5-07",
+    "query": "Neck D5 蓝牙连不上怎么办？",
+    "expect_doc": "Neck D5",
     "expect_keywords": [
-      "680 g"
-    ],
-    "type": "table"
-  },
-  {
-    "id": "id5-002",
-    "query": "iDream 5s 噪音大吗？",
-    "expect_doc": "iDream",
-    "expect_keywords": [
-      "55 dB"
-    ],
-    "type": "table"
-  },
-  {
-    "id": "s4-001",
-    "query": "See 4 能不能连蓝牙放音乐？",
-    "expect_doc": "See 4",
-    "expect_keywords": [
-      "蓝牙"
+      "重启手机蓝牙"
     ],
     "type": "text"
   },
   {
-    "id": "s4-002",
-    "query": "青光眼患者能用 See 4 吗？",
-    "expect_doc": "See 4",
+    "id": "nd5-08",
+    "query": "孕妇能用 Neck D5 吗？",
+    "expect_doc": "Neck D5",
+    "expect_keywords": [
+      "不建议"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n7-01",
+    "query": "N7 按摩头几个？",
+    "expect_doc": "N7",
+    "expect_keywords": [
+      "4 个"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n7-02",
+    "query": "N7 热敷多少度？",
+    "expect_doc": "N7",
+    "expect_keywords": [
+      "45°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n7-03",
+    "query": "N7 噪音多大？",
+    "expect_doc": "N7",
+    "expect_keywords": [
+      "50 dB"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n7-04",
+    "query": "N7 有什么黑科技？",
+    "expect_doc": "N7",
+    "expect_keywords": [
+      "智能悬停",
+      "压力感应"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n7-05",
+    "query": "N7 电池多大？",
+    "expect_doc": "N7",
+    "expect_keywords": [
+      "2600 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n7-06",
+    "query": "N7 颈椎脱位能用吗？",
+    "expect_doc": "N7",
     "expect_keywords": [
       "禁用"
     ],
     "type": "text"
   },
   {
-    "id": "a3s-001",
-    "query": "Air 3S 腰部按摩仪有几个电机？",
-    "expect_doc": "Air 3S",
+    "id": "air2-01",
+    "query": "iNeck Air 2 怎么充气？",
+    "expect_doc": "iNeck Air 2",
     "expect_keywords": [
-      "2 个"
-    ],
-    "type": "table"
-  },
-  {
-    "id": "a3s-002",
-    "query": "腰突急性期能不能用 Air 3S？",
-    "expect_doc": "Air 3S",
-    "expect_keywords": [
-      "急性期禁用"
+      "电动充气"
     ],
     "type": "text"
   },
   {
-    "id": "p2-001",
-    "query": "Palm 2 手部按摩仪热敷多少度？",
-    "expect_doc": "Palm 2",
+    "id": "air2-02",
+    "query": "iNeck Air 2 气囊几档？",
+    "expect_doc": "iNeck Air 2",
+    "expect_keywords": [
+      "3 档"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "air2-03",
+    "query": "iNeck Air 2 收纳多大？",
+    "expect_doc": "iNeck Air 2",
+    "expect_keywords": [
+      "15x15x8"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "air2-04",
+    "query": "iNeck Air 2 电池多大？",
+    "expect_doc": "iNeck Air 2",
+    "expect_keywords": [
+      "1800 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "air2-05",
+    "query": "颈椎手术后多久能用 iNeck Air 2？",
+    "expect_doc": "iNeck Air 2",
+    "expect_keywords": [
+      "3 个月"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "z6-01",
+    "query": "Z6 模拟什么手法？",
+    "expect_doc": "Z6",
+    "expect_keywords": [
+      "古法推拿",
+      "推拿"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "z6-02",
+    "query": "Z6 按摩头几个？",
+    "expect_doc": "Z6",
+    "expect_keywords": [
+      "6 个"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "z6-03",
+    "query": "Z6 背部热敷多少度？",
+    "expect_doc": "Z6",
+    "expect_keywords": [
+      "50°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "z6-04",
+    "query": "Z6 电池多大？",
+    "expect_doc": "Z6",
+    "expect_keywords": [
+      "3000 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "z6-05",
+    "query": "Z6 每次用多久？",
+    "expect_doc": "Z6",
+    "expect_keywords": [
+      "20 分钟"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s7-01",
+    "query": "See 7 冷敷多少度？",
+    "expect_doc": "See 7",
+    "expect_keywords": [
+      "10-15°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s7-02",
+    "query": "See 7 热敷多少度？",
+    "expect_doc": "See 7",
+    "expect_keywords": [
+      "40-42°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s7-03",
+    "query": "See 7 有几种模式？",
+    "expect_doc": "See 7",
+    "expect_keywords": [
+      "8 种"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s7-04",
+    "query": "See 7 能连蓝牙吗？",
+    "expect_doc": "See 7",
+    "expect_keywords": [
+      "支持"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s7-05",
+    "query": "急性结膜炎能用 See 7 吗？",
+    "expect_doc": "See 7",
+    "expect_keywords": [
+      "禁用"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "skp-01",
+    "query": "See K Pro 冷热多久切换？",
+    "expect_doc": "See K Pro",
+    "expect_keywords": [
+      "30 秒"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "skp-02",
+    "query": "See K Pro 续航几次？",
+    "expect_doc": "See K Pro",
+    "expect_keywords": [
+      "7 次"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "skp-03",
+    "query": "See K Pro 电池多大？",
+    "expect_doc": "See K Pro",
+    "expect_keywords": [
+      "2000 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "skp-04",
+    "query": "戴隐形眼镜能用 See K Pro 吗？",
+    "expect_doc": "See K Pro",
+    "expect_keywords": [
+      "取下"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s5k-01",
+    "query": "See 5K 适合几岁儿童？",
+    "expect_doc": "See 5K",
+    "expect_keywords": [
+      "6-12 岁"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s5k-02",
+    "query": "See 5K 热敷多少度？",
+    "expect_doc": "See 5K",
+    "expect_keywords": [
+      "38°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s5k-03",
+    "query": "See 5K 定时多久？",
+    "expect_doc": "See 5K",
+    "expect_keywords": [
+      "8 分钟"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s5k-04",
+    "query": "6 岁以下能用 See 5K 吗？",
+    "expect_doc": "See 5K",
+    "expect_keywords": [
+      "禁用"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s5r-01",
+    "query": "See 5R 用什么雾化技术？",
+    "expect_doc": "See 5R",
+    "expect_keywords": [
+      "T-AIR",
+      "超声波"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s5r-02",
+    "query": "See 5R 水箱多大？",
+    "expect_doc": "See 5R",
+    "expect_keywords": [
+      "8 ml"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s5r-03",
+    "query": "See 5R 温度范围？",
+    "expect_doc": "See 5R",
+    "expect_keywords": [
+      "25-42°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "s5r-04",
+    "query": "See 5R 能加水吗？",
+    "expect_doc": "See 5R",
+    "expect_keywords": [
+      "专用润眼液",
+      "不可加水"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id5s-01",
+    "query": "iDream 5S 电池多大？",
+    "expect_doc": "iDream 5S",
+    "expect_keywords": [
+      "2300 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id5s-02",
+    "query": "iDream 5S 充多久？",
+    "expect_doc": "iDream 5S",
+    "expect_keywords": [
+      "2.5 小时"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id5s-03",
+    "query": "iDream 5S 多重？",
+    "expect_doc": "iDream 5S",
+    "expect_keywords": [
+      "680 g"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id5s-04",
+    "query": "iDream 5S 噪音多大？",
+    "expect_doc": "iDream 5S",
+    "expect_keywords": [
+      "55 dB"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id5s-05",
+    "query": "iDream 5S 用戴眼镜吗？",
+    "expect_doc": "iDream 5S",
+    "expect_keywords": [
+      "取下"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id3-01",
+    "query": "iDream 3 充一次用多久？",
+    "expect_doc": "iDream 3",
+    "expect_keywords": [
+      "1 周"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id3-02",
+    "query": "iDream 3 多重？",
+    "expect_doc": "iDream 3",
+    "expect_keywords": [
+      "520 g"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id3-03",
+    "query": "iDream 3 能折叠吗？",
+    "expect_doc": "iDream 3",
+    "expect_keywords": [
+      "可折叠"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "id3-04",
+    "query": "头皮有伤口能用 iDream 3 吗？",
+    "expect_doc": "iDream 3",
+    "expect_keywords": [
+      "禁用"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "isee4-01",
+    "query": "iSee 4 热敷范围？",
+    "expect_doc": "iSee 4",
+    "expect_keywords": [
+      "38-42°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "isee4-02",
+    "query": "iSee 4 能折叠吗？",
+    "expect_doc": "iSee 4",
+    "expect_keywords": [
+      "可折叠"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "isee4-03",
+    "query": "iSee 4 几种模式？",
+    "expect_doc": "iSee 4",
+    "expect_keywords": [
+      "4 种"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "isee4-04",
+    "query": "视网膜脱离能用 iSee 4 吗？",
+    "expect_doc": "iSee 4",
+    "expect_keywords": [
+      "禁用"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "in3p-01",
+    "query": "iNeck 3 Pro 电池多大？",
+    "expect_doc": "iNeck 3 Pro",
+    "expect_keywords": [
+      "2300 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "in3p-02",
+    "query": "iNeck 3 Pro 多重？",
+    "expect_doc": "iNeck 3 Pro",
+    "expect_keywords": [
+      "1000 g"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "in3p-03",
+    "query": "iNeck 3 Pro 热敷多少度？",
+    "expect_doc": "iNeck 3 Pro",
+    "expect_keywords": [
+      "45°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "in3p-04",
+    "query": "iNeck 3 Pro 使用时能开车吗？",
+    "expect_doc": "iNeck 3 Pro",
+    "expect_keywords": [
+      "勿驾驶"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5m-01",
+    "query": "N5 mini 电池多大？",
+    "expect_doc": "N5 mini",
+    "expect_keywords": [
+      "2500 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5m-02",
+    "query": "N5 mini 多重？",
+    "expect_doc": "N5 mini",
+    "expect_keywords": [
+      "1200 g"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5m-03",
+    "query": "N5 mini 充多久？",
+    "expect_doc": "N5 mini",
+    "expect_keywords": [
+      "3.5 小时"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5m-04",
+    "query": "N5 mini 续航几次？",
+    "expect_doc": "N5 mini",
+    "expect_keywords": [
+      "3-4 次"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5m-05",
+    "query": "N5 mini 按摩头布套能洗吗？",
+    "expect_doc": "N5 mini",
+    "expect_keywords": [
+      "可拆卸清洗"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5l-01",
+    "query": "Neck 5 Lite 多重？",
+    "expect_doc": "Neck 5 Lite",
+    "expect_keywords": [
+      "380 g"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5l-02",
+    "query": "Neck 5 Lite 热敷多少度？",
+    "expect_doc": "Neck 5 Lite",
+    "expect_keywords": [
+      "42°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "n5l-03",
+    "query": "Neck 5 Lite 有什么颜色？",
+    "expect_doc": "Neck 5 Lite",
+    "expect_keywords": [
+      "CC 粉",
+      "雾霾蓝"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "em5-01",
+    "query": "EM005 热敷多少度？",
+    "expect_doc": "EM005",
     "expect_keywords": [
       "40°C"
     ],
-    "type": "table"
+    "type": "text"
   },
   {
-    "id": "f3-001",
-    "query": "Foot 3 足底有几组滚轮？",
+    "id": "em5-02",
+    "query": "EM005 电池多大？",
+    "expect_doc": "EM005",
+    "expect_keywords": [
+      "1200 mAh"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "em5-03",
+    "query": "EM005 多久自动关机？",
+    "expect_doc": "EM005",
+    "expect_keywords": [
+      "15 分钟"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "is3s-01",
+    "query": "iSee 3S 材质是什么？",
+    "expect_doc": "iSee 3S",
+    "expect_keywords": [
+      "fabric",
+      "ABS"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "is3s-02",
+    "query": "iSee 3S 充多久？",
+    "expect_doc": "iSee 3S",
+    "expect_keywords": [
+      "3 小时"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "is3s-03",
+    "query": "iSee 3S 能水洗吗？",
+    "expect_doc": "iSee 3S",
+    "expect_keywords": [
+      "干布擦拭"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "f3-01",
+    "query": "Foot 3 功率多大？",
+    "expect_doc": "Foot 3",
+    "expect_keywords": [
+      "45W"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "f3-02",
+    "query": "Foot 3 几组滚轮？",
     "expect_doc": "Foot 3",
     "expect_keywords": [
       "3 组"
     ],
-    "type": "table"
+    "type": "text"
   },
   {
-    "id": "f3-002",
-    "query": "糖尿病人能用 Foot 3 吗？",
+    "id": "f3-03",
+    "query": "Foot 3 热敷多少度？",
+    "expect_doc": "Foot 3",
+    "expect_keywords": [
+      "45°C"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "f3-04",
+    "query": "Foot 3 定时多久？",
+    "expect_doc": "Foot 3",
+    "expect_keywords": [
+      "15",
+      "30 分钟"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "f3-05",
+    "query": "糖尿病足能用 Foot 3 吗？",
     "expect_doc": "Foot 3",
     "expect_keywords": [
       "慎用"
@@ -162,136 +773,128 @@
     "type": "text"
   },
   {
-    "id": "m1-001",
-    "query": "M1 筋膜枪最高转速多少？",
+    "id": "m1-01",
+    "query": "M1 最高转速多少？",
     "expect_doc": "M1",
     "expect_keywords": [
       "3200 rpm"
     ],
-    "type": "table"
+    "type": "text"
   },
   {
-    "id": "m1-002",
+    "id": "m1-02",
+    "query": "M1 几档？",
+    "expect_doc": "M1",
+    "expect_keywords": [
+      "5 档"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "m1-03",
+    "query": "M1 噪音多大？",
+    "expect_doc": "M1",
+    "expect_keywords": [
+      "45 dB"
+    ],
+    "type": "text"
+  },
+  {
+    "id": "m1-04",
     "query": "M1 带几个按摩头？",
     "expect_doc": "M1",
     "expect_keywords": [
       "4 个"
     ],
-    "type": "table"
+    "type": "text"
   },
   {
-    "id": "m1-003",
-    "query": "M1 能不能打关节？",
+    "id": "m1-05",
+    "query": "M1 能打关节吗？",
     "expect_doc": "M1",
     "expect_keywords": [
-      "禁止击打关节"
+      "禁击关节"
     ],
     "type": "text"
   },
   {
-    "id": "as-001",
-    "query": "整机保修多长时间？",
-    "expect_doc": "售后政策",
+    "id": "m1-06",
+    "query": "M1 同一部位用多久？",
+    "expect_doc": "M1",
     "expect_keywords": [
-      "1 年"
+      "60 秒"
     ],
     "type": "text"
   },
   {
-    "id": "as-002",
-    "query": "电池保修多久？",
-    "expect_doc": "售后政策",
+    "id": "p2-01",
+    "query": "Palm 2 热敷多少度？",
+    "expect_doc": "Palm 2",
     "expect_keywords": [
-      "6 个月"
+      "40°C"
     ],
     "type": "text"
   },
   {
-    "id": "as-003",
-    "query": "质量问题多少天内可以换货？",
-    "expect_doc": "售后政策",
+    "id": "p2-02",
+    "query": "Palm 2 气囊几种模式？",
+    "expect_doc": "Palm 2",
     "expect_keywords": [
-      "15 天"
+      "4 种"
     ],
     "type": "text"
   },
   {
-    "id": "fq1-001",
-    "query": "设备开不了机怎么办？",
-    "expect_doc": "FAQ（一）",
+    "id": "p2-03",
+    "query": "Palm 2 多久自动关机？",
+    "expect_doc": "Palm 2",
     "expect_keywords": [
-      "充电 30 分钟"
+      "10 分钟"
     ],
     "type": "text"
   },
   {
-    "id": "fq1-002",
-    "query": "按摩没感觉怎么回事？",
-    "expect_doc": "FAQ（一）",
+    "id": "p2-04",
+    "query": "关节炎急性发作能用 Palm 2 吗？",
+    "expect_doc": "Palm 2",
     "expect_keywords": [
-      "电极片",
-      "皮肤"
+      "禁用"
     ],
     "type": "text"
   },
   {
-    "id": "fq1-003",
-    "query": "能不能一边充电一边用？",
-    "expect_doc": "FAQ（一）",
-    "expect_keywords": [
-      "不建议"
-    ],
-    "type": "text"
-  },
-  {
-    "id": "fq2-001",
-    "query": "电极片一般用多久要换？",
-    "expect_doc": "FAQ（二）",
-    "expect_keywords": [
-      "30 次",
-      "30 天"
-    ],
-    "type": "text"
-  },
-  {
-    "id": "fq2-002",
-    "query": "设备能托运上飞机吗？",
-    "expect_doc": "FAQ（二）",
-    "expect_keywords": [
-      "不可托运",
-      "随身携带"
-    ],
-    "type": "text"
-  },
-  {
-    "id": "fq2-003",
-    "query": "怎么清洁设备？",
-    "expect_doc": "FAQ（二）",
-    "expect_keywords": [
-      "干布",
-      "软布"
-    ],
-    "type": "text"
-  },
-  {
-    "id": "adv-001",
-    "query": "N6 mini 的售价是多少？",
+    "id": "adv-01",
+    "query": "N6 mini 卖多少钱？",
     "expect_doc": "N6 mini",
-    "type": "adversarial",
-    "note": "所有文档都没提价格"
+    "expect_keywords": [],
+    "type": "adversarial"
   },
   {
-    "id": "adv-002",
-    "query": "NeckD5 有没有灰色款？",
-    "expect_doc": "NeckD5",
-    "type": "adversarial",
-    "note": "文档没提颜色"
+    "id": "adv-02",
+    "query": "Neck D5 有几个颜色？",
+    "expect_doc": "Neck D5",
+    "expect_keywords": [],
+    "type": "adversarial"
   },
   {
-    "id": "adv-003",
-    "query": "你们客服电话是多少？",
-    "expect_doc": "售后政策",
-    "type": "adversarial",
-    "note": "售后文档没给电话号码"
+    "id": "adv-03",
+    "query": "你们客服电话多少？",
+    "expect_doc": "售后",
+    "expect_keywords": [],
+    "type": "adversarial"
+  },
+  {
+    "id": "adv-04",
+    "query": "iDream 5S 支持 iOS 还是安卓？",
+    "expect_doc": "iDream 5S",
+    "expect_keywords": [],
+    "type": "adversarial"
+  },
+  {
+    "id": "adv-05",
+    "query": "M1 筋膜枪有粉色款吗？",
+    "expect_doc": "M1",
+    "expect_keywords": [],
+    "type": "adversarial"
   }
 ]

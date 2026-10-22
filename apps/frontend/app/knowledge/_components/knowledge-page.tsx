@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef, useReducer } from "react";
+import { useSyncExternalStore, useEffect, useMemo, useCallback, useRef, useReducer } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Library, Search, FilePlus, Upload } from "lucide-react";
 import { Panel, Group, Separator } from "react-resizable-panels";
@@ -41,6 +41,7 @@ const KnowledgeChat = dynamic(() => import("./knowledge-chat").then((m) => ({ de
 // ---------------------------------------------------------------------------
 
 const initialState: PageState = {
+  error: "",
   allKbs: [],
   kbsLoading: true,
   selectedKb: null,
@@ -60,7 +61,11 @@ const initialState: PageState = {
 
 export function KnowledgePage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const [state, setState] = useReducer((prev: PageState, next: Partial<PageState>) => ({ ...prev, ...next }), initialState);
 
   const {
@@ -82,7 +87,9 @@ export function KnowledgePage() {
   } = state;
 
   const allKbsRef = useRef(allKbs);
-  allKbsRef.current = allKbs;
+  useEffect(() => {
+    allKbsRef.current = allKbs;
+  }, [allKbs]);
 
   // 防止 StrictMode 下 useEffect 重复执行
   const initRef = useRef(false);
@@ -96,20 +103,20 @@ export function KnowledgePage() {
   }, []);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
 
-    (async () => {
-      const data = await fetchKbList();
-      if (data.length === 0) return;
-      const first = data[0];
-      setState({ selectedKb: first, selectedDoc: null, searchQuery: "", docsLoading: true });
-      const docs = await getDocuments(first.id);
-      setState({ documents: docs, docsLoading: false });
+    void (async () => {
+      try {
+        const data = await fetchKbList();
+        if (data.length === 0) return;
+        const first = data[0];
+        setState({ selectedKb: first, selectedDoc: null, searchQuery: "", docsLoading: true });
+        const docs = await getDocuments(first.id);
+        setState({ documents: docs, docsLoading: false });
+      } catch (error) {
+        setState({ error: String(error), kbsLoading: false, docsLoading: false });
+      }
     })();
   }, [fetchKbList]);
 
@@ -128,11 +135,13 @@ export function KnowledgePage() {
   useEffect(() => {
     const docId = selectedDoc?.id;
     if (!docId || !selectedKb) return;
-    (async () => {
+    void (async () => {
       setState({ docContentLoading: true });
       try {
         const { content } = await getDocumentContent(docId);
         setState({ docContent: content });
+      } catch (error) {
+        setState({ error: String(error) });
       } finally {
         setState({ docContentLoading: false });
       }
@@ -217,6 +226,11 @@ export function KnowledgePage() {
         </div>
       </header>
 
+      {state.error ? (
+        <p role="alert" className="border-b px-4 py-2 text-sm text-destructive">
+          {state.error}
+        </p>
+      ) : null}
       {/* 三栏主体 */}
       <div className="flex-1 overflow-hidden">
         {mounted ? (
@@ -227,7 +241,9 @@ export function KnowledgePage() {
                 items={allKbs}
                 selectedId={selectedKb?.id ?? null}
                 loading={kbsLoading}
-                onSelect={handleSelectKb}
+                onSelect={(id) => {
+                  void handleSelectKb(id).catch((error: unknown) => setState({ error: String(error), docsLoading: false }));
+                }}
                 onCreateClick={openCreate}
                 onEdit={handleEdit}
                 onDelete={handleDeleteClick}
@@ -260,7 +276,14 @@ export function KnowledgePage() {
                       documentId={selectedDoc.id}
                       onSaved={() => {
                         // 重新加载文档内容
-                        getDocumentContent(selectedDoc.id).then(({ content }) => setState({ docContent: content }));
+                        void (async () => {
+                          try {
+                            const { content } = await getDocumentContent(selectedDoc.id);
+                            setState({ docContent: content });
+                          } catch (error) {
+                            setState({ error: String(error) });
+                          }
+                        })();
                       }}
                     />
                   </div>
@@ -296,7 +319,7 @@ export function KnowledgePage() {
                       onSelect={(doc) => setState({ selectedDoc: doc })}
                       onDelete={async (doc) => {
                         await deleteDocument(doc.id);
-                        const docs = await getDocuments(selectedKb!.id);
+                        const docs = await getDocuments(selectedKb.id);
                         setState({ documents: docs });
                       }}
                       loading={docsLoading}
@@ -344,7 +367,13 @@ export function KnowledgePage() {
             <Button variant="outline" onClick={() => setState({ deleteDialogOpen: false })}>
               取消
             </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete} className="gap-2 ml-2">
+            <Button
+              variant="destructive"
+              onClick={() => {
+                void handleConfirmDelete().catch((error: unknown) => setState({ error: String(error) }));
+              }}
+              className="gap-2 ml-2"
+            >
               确认删除
             </Button>
           </DialogFooter>
@@ -359,7 +388,9 @@ export function KnowledgePage() {
         open={uploadDocOpen}
         onOpenChange={(open) => setState({ uploadDocOpen: open })}
         kbId={selectedKb?.id}
-        onCreated={handleDocCreated}
+        onCreated={() => {
+          void handleDocCreated().catch((error: unknown) => setState({ error: String(error) }));
+        }}
       />
     </div>
   );

@@ -23,7 +23,7 @@ export function createDirectiveText(formatter: Unstable_DirectiveFormatter, opti
   const Component: TextMessagePartComponent = ({ text }) => {
     const segments = formatter.parse(text);
 
-    if (segments.length === 1 && segments[0]!.kind === "text") {
+    if (segments.length === 1 && segments[0].kind === "text") {
       return <>{text}</>;
     }
 

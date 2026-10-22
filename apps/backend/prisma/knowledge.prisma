@@ -42,6 +42,8 @@ model KnowledgeDocument {
   content  String? @db.Text
 
   chunkCount Int @default(0) @map("chunk_count")
+  // 活跃索引版本；NULL 兼容未带版本的历史切片
+  indexRevision String? @map("index_revision")
 
   // 解析元数据（uploadDocument 解析后落库；新建文档/旧文档为空）
   // mode：text-layer（纯文本层）/ baidu-doc-analysis（纯扫描 OCR）/ mixed（逐页混合路由）

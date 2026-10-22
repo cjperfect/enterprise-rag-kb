@@ -1,8 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, ParseIntPipe } from "@nestjs/common";
 import { KnowledgeService } from "./knowledge.service";
 import type { CreateKnowledgeBaseDto, UpdateKnowledgeBaseDto } from "./dto/knowledge.dto";
-// TODO: 临时跳过登录校验
-// import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 
 /**
@@ -11,8 +9,6 @@ import { CurrentUser } from "../auth/current-user.decorator";
  * 文档的创建/上传/更新/删除/内容/切片已拆到 /api/documents（见 document/document.controller.ts）。
  */
 @Controller("api/knowledge")
-// TODO: 临时跳过登录校验
-// @UseGuards(JwtAuthGuard)
 export class KnowledgeController {
   constructor(private readonly knowledgeService: KnowledgeService) {}
 
@@ -31,8 +27,8 @@ export class KnowledgeController {
   }
 
   @Get(":id")
-  async get(@Param("id", ParseIntPipe) id: number) {
-    return this.knowledgeService.get(id);
+  async get(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: { id: number }) {
+    return this.knowledgeService.get(id, user.id);
   }
 
   @Patch(":id")

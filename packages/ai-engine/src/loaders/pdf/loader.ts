@@ -40,10 +40,7 @@ import { detectPdfImageBlocks, isImageSemanticEnabled, semanticizePdfFigures } f
 
 /** 超出直传上限时的统一报错（「无法解析」与「含扫描页」两种场景复用同一提示） */
 function throwOversizeError(reason: "无法本地解析文本" | "包含无文本层页面"): never {
-  throw new Error(
-    `PDF 文件超过 ${PDF_DIRECT_LIMIT_BYTES / 1024 / 1024}MB 且${reason}，` +
-      `超出百度文档解析 pdf_file 直传上限（编码后 4M），请压缩或拆分后重试`,
-  );
+  throw new Error(`PDF 文件超过 ${PDF_DIRECT_LIMIT_BYTES / 1024 / 1024}MB 且${reason}，` + `超出百度文档解析 pdf_file 直传上限（编码后 4M），请压缩或拆分后重试`);
 }
 
 // ==========================================================================
@@ -72,9 +69,7 @@ export function needOcrPage(pageText: string): boolean {
 
   if ((text.match(/\uFFFD/g) ?? []).length / text.length > 0.1) return true;
 
-  const usableRatio =
-    (text.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u3000-\u303f\uff00-\uffef\x00-\x7f]/g) ?? []).length /
-    text.length;
+  const usableRatio = (text.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u3000-\u303f\uff00-\uffef\x20-\x7f]/g) ?? []).length / text.length;
   return usableRatio < 0.7;
 }
 
@@ -163,8 +158,7 @@ export function normalizeHeadings(text: string): string {
       if (/^[（(]\s*\d+\s*[)）]/.test(body)) return line;
       // 标题文本判定：短（≤25 字符）、不以句号结尾、无句中逗号 ——
       // 区分「1. 节标题」（转层级）与「1. 有序步骤」（如「1. 清洁颈部皮肤并略微湿润…」，保留原样）
-      const looksLikeHeadingText = (s2: string) =>
-        s2.length <= 25 && !/[。！？]$/.test(s2) && !/[,，；;：]/.test(s2);
+      const looksLikeHeadingText = (s2: string) => s2.length <= 25 && !/[。！？]$/.test(s2) && !/[,，；;：]/.test(s2);
 
       // 小节 1.1
       let m = body.match(/^(\d+\.\d+)[.、]?\s*(.+)$/); // 1.1 与 1.1、 与 1.1 空格 均视为小节
@@ -207,11 +201,7 @@ export function reflowBrokenLines(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     const prev = lines[i].trimEnd();
     const nextRaw = lines[i + 1];
-    if (
-      !nextRaw || nextRaw.trim() === "" ||
-      protectedLine.test(prev) || protectedLine.test(nextRaw) ||
-      headingLine.test(prev) || headingLine.test(nextRaw)
-    ) {
+    if (!nextRaw || nextRaw.trim() === "" || protectedLine.test(prev) || protectedLine.test(nextRaw) || headingLine.test(prev) || headingLine.test(nextRaw)) {
       out.push(lines[i]); // 保护行 / 无下一行 / 空行 → 原样保留
       continue;
     }
@@ -266,7 +256,12 @@ export function isPageNumberLine(line: string): boolean {
  */
 export function cleanFallbackPageTexts(pageTexts: string[]): string[] {
   if (pageTexts.length < 2) {
-    return pageTexts.map((t) => t.split("\n").filter((l) => !isPageNumberLine(l)).join("\n"));
+    return pageTexts.map((t) =>
+      t
+        .split("\n")
+        .filter((l) => !isPageNumberLine(l))
+        .join("\n"),
+    );
   }
 
   // 跨页重复行统计（每页只计一次，避免页内重复行干扰）
@@ -373,9 +368,7 @@ async function applyUnstructuredToTextPages(
         }
       } catch (err) {
         // 语义化整体意外失败（探测/渲染异常）：忽略，保持 Unstructured 原始结果
-        console.warn(
-          `[loadPdf] 图片语义化整体失败（已忽略）：${err instanceof Error ? err.message : String(err)}`,
-        );
+        console.warn(`[loadPdf] 图片语义化整体失败（已忽略）：${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -384,30 +377,24 @@ async function applyUnstructuredToTextPages(
       if (!scanPageSet.has(i + 1)) pageTexts[i] = text;
     });
   } catch (err) {
-    console.warn(
-      `[loadPdf] Unstructured 版面分析失败，文本层页回退本地提取：${err instanceof Error ? err.message : String(err)}`,
-    );
+    console.warn(`[loadPdf] Unstructured 版面分析失败，文本层页回退本地提取：${err instanceof Error ? err.message : String(err)}`);
     // 回退 pdf-parse 的后处理（仅文本层页；扫描页保持百度 OCR 结果）：
     //   a) 本地探测 Tab 对齐表格并打标 → 表格豁免在回退路径生效
     //   b) 跨页页眉页脚/页码清理 → 品牌页眉、页码不再逐页混入正文
     for (let i = 0; i < pageTexts.length; i++) {
       if (!scanPageSet.has(i + 1)) {
-        pageTexts[i] = markLocalTables(pageTexts[i]);      // 表格探测（需 Tab 原文）
-        pageTexts[i] = reflowBrokenLines(pageTexts[i]);    // 断行重组（跳过表格/标题/列表）
+        pageTexts[i] = markLocalTables(pageTexts[i]); // 表格探测（需 Tab 原文）
+        pageTexts[i] = reflowBrokenLines(pageTexts[i]); // 断行重组（跳过表格/标题/列表）
       }
     }
-    const cleaned = cleanFallbackPageTexts(pageTexts);     // 页眉页脚/页码（在重组后，避免页眉行被接进正文）
+    const cleaned = cleanFallbackPageTexts(pageTexts); // 页眉页脚/页码（在重组后，避免页眉行被接进正文）
     cleaned.forEach((t, i) => (pageTexts[i] = t));
   }
   return { pageTexts, images };
 }
 
 /** 本地文本层探测失败（无法解析）时的整份文档 OCR 通道 */
-async function routeWholeOcr(
-  filePath: string,
-  buffer: Buffer,
-  options?: PdfLoadOptions,
-): Promise<Document[]> {
+async function routeWholeOcr(filePath: string, buffer: Buffer, options?: PdfLoadOptions): Promise<Document[]> {
   if (buffer.byteLength > PDF_DIRECT_LIMIT_BYTES) {
     throwOversizeError("无法本地解析文本");
   }
@@ -438,9 +425,7 @@ export async function loadPdf(filePath: string, options?: PdfLoadOptions): Promi
     localPages = await extractLocalPageTexts(filePath);
   } catch (err) {
     // 解析失败时整份文档走 OCR（百度服务端自己栅格化，容错更强）
-    console.warn(
-      `[loadPdf] 本地文本层探测失败，整份文档走 OCR：${err instanceof Error ? err.message : String(err)}`,
-    );
+    console.warn(`[loadPdf] 本地文本层探测失败，整份文档走 OCR：${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (localPages.length === 0) {

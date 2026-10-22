@@ -47,6 +47,7 @@ services:
       DATABASE_URL: postgresql://root:chenjiang@postgres:5432/langchain_rag
       ES_URL: http://elasticsearch:9200
       NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?请配置 JWT_SECRET}
       PORT: 3001
       # 其余配置从 .env 注入（或在部署平台配 secret）
       LLM_PROVIDER: ${LLM_PROVIDER}

@@ -61,21 +61,9 @@ export interface UseTaskEventStreamResult {
   error: string | null;
 }
 
-/** 后端端口，与 apps/backend 默认 PORT 对齐 */
-const BACKEND_PORT = 3001;
-
-/**
- * 后端事件流地址
- *
- * 用当前页面的 hostname 推导，而不是写死 localhost —— 从 127.0.0.1 或
- * Next 启动时打印的局域网地址打开页面时，写死 localhost 会让 EventSource
- * 连到「客户端自己的 localhost:3001」，连接失败且被 CORS 拦掉，
- * 表现为「点了上传没有任何消息推送」。
- */
+/** 与 HTTP API 共用同源 cookie，避免直连后端导致鉴权或域名不一致。 */
 function buildUrl(typesKey: string): string {
-  const base = process.env.NEXT_PUBLIC_API_ORIGIN ?? `http://${window.location.hostname}:${BACKEND_PORT}`;
-  const suffix = typesKey ? `/api/events/stream?types=${encodeURIComponent(typesKey)}` : "/api/events/stream";
-  return `${base}${suffix}`;
+  return typesKey ? `/api/events/stream?types=${encodeURIComponent(typesKey)}` : "/api/events/stream";
 }
 
 /** 运行时校验，避免把非预期结构当作任务事件消费 */
@@ -94,7 +82,9 @@ export function useTaskEventStream({ types, enabled, onMessage }: UseTaskEventSt
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const handlerRef = useRef(onMessage);
-  handlerRef.current = onMessage;
+  useEffect(() => {
+    handlerRef.current = onMessage;
+  }, [onMessage]);
 
   const typesKey = types?.join(",") ?? "";
 
@@ -113,11 +103,7 @@ export function useTaskEventStream({ types, enabled, onMessage }: UseTaskEventSt
       setConnected(false);
       // readyState === CLOSED 说明是致命错误（连不上 / 被 CORS 拦），浏览器不会重试；
       // CONNECTING 则是连接中断后的自动重连，属于可恢复状态。
-      setError(
-        source.readyState === EventSource.CLOSED
-          ? `无法连接事件流 ${url}，进度将不会实时更新`
-          : "事件流连接中断，正在重连…",
-      );
+      setError(source.readyState === EventSource.CLOSED ? `无法连接事件流 ${url}，进度将不会实时更新` : "事件流连接中断，正在重连…");
     };
 
     source.onmessage = (event) => {

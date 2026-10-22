@@ -20,12 +20,18 @@ const STANDALONE_CONFIG_FILES = ["**/*.config.{ts,mts,cts,mjs,js}", "**/prisma.c
 
 export default tseslint.config(
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.next/**", "**/out/**", "**/coverage/**", "**/next-env.d.ts", "**/*.tsbuildinfo"],
+    ignores: ["**/.venv/**", "**/node_modules/**", "**/dist/**", "**/build/**", "**/.next/**", "**/out/**", "**/coverage/**", "**/next-env.d.ts", "**/*.tsbuildinfo"],
   },
 
   // ---- 全局基底规则 ----------------------------------------------------------
   js.configs.recommended,
   tseslint.configs.recommended,
+
+  {
+    files: ["**/*.cjs", "**/*.mjs"],
+    languageOptions: { globals: globals.node },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
 
   // ---- 类型感知规则：仅覆盖源码 ----------------------------------------------
   {

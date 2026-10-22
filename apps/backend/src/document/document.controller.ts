@@ -1,9 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, ParseIntPipe, UseInterceptors, UploadedFile } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, ParseIntPipe, UseInterceptors, UploadedFile } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { DocumentService } from "./document.service";
 import type { CreateDocumentDto, UpdateDocumentDto } from "../knowledge/dto/knowledge.dto";
-// TODO: 临时跳过登录校验
-// import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 
 /** 单文件上传上限，与前端「单个文件最大 50MB」提示对齐 */
@@ -22,8 +20,6 @@ const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
  * 知识库下的文档列表仍由 GET /api/knowledge/:id/documents 提供（容器聚合查询）。
  */
 @Controller("api/documents")
-// TODO: 临时跳过登录校验
-// @UseGuards(JwtAuthGuard)
 export class DocumentController {
   constructor(private readonly documentService: DocumentService) {}
 
@@ -44,9 +40,9 @@ export class DocumentController {
     @UploadedFile() file: { buffer: Buffer; originalname: string; size: number },
   ) {
     return this.documentService.uploadDocument(kbId, user.id, {
-      fileName: file.originalname,
-      buffer: file.buffer,
-      size: file.size,
+      fileName: file?.originalname,
+      buffer: file?.buffer,
+      size: file?.size,
     });
   }
 
@@ -55,28 +51,29 @@ export class DocumentController {
   @UseInterceptors(FileInterceptor("file", { defParamCharset: "utf8", limits: { fileSize: MAX_UPLOAD_SIZE } }))
   async parseDocumentOnly(
     @Query("kbId", ParseIntPipe) kbId: number,
+    @CurrentUser() user: { id: number },
     @UploadedFile() file: { buffer: Buffer; originalname: string; size: number },
   ) {
-    return this.documentService.parseOnly(kbId, {
-      fileName: file.originalname,
-      buffer: file.buffer,
-      size: file.size,
+    return this.documentService.parseOnly(kbId, user.id, {
+      fileName: file?.originalname,
+      buffer: file?.buffer,
+      size: file?.size,
     });
   }
 
   @Get(":docId/content")
-  async getDocumentContent(@Param("docId", ParseIntPipe) docId: number) {
-    return this.documentService.getDocumentContent(docId);
+  async getDocumentContent(@Param("docId", ParseIntPipe) docId: number, @CurrentUser() user: { id: number }) {
+    return this.documentService.getDocumentContent(docId, user.id);
   }
 
   @Get(":docId/parsed")
-  async getParsedDocument(@Param("docId", ParseIntPipe) docId: number) {
-    return this.documentService.getParsedDocument(docId);
+  async getParsedDocument(@Param("docId", ParseIntPipe) docId: number, @CurrentUser() user: { id: number }) {
+    return this.documentService.getParsedDocument(docId, user.id);
   }
 
   @Get(":docId/chunks")
-  async getDocumentChunks(@Param("docId", ParseIntPipe) docId: number) {
-    return this.documentService.getDocumentChunks(docId);
+  async getDocumentChunks(@Param("docId", ParseIntPipe) docId: number, @CurrentUser() user: { id: number }) {
+    return this.documentService.getDocumentChunks(docId, user.id);
   }
 
   @Patch(":docId")

@@ -2,7 +2,7 @@ import { createAgentSession, SessionManager, type AgentSessionEvent } from "@ear
 import { dirname } from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ChatOptions, ContextMessage, PiSessionSaved } from "@langchain-rag/shared/interfaces";
+import type { ChatOptions, ContextMessage, PiSessionSaved } from "@enterprise-rag-kb/shared/interfaces";
 import { systemPrompt } from "../prompts";
 import { createEmptyScope, createKnowledgeSearchTool } from "../tools/knowledge-search";
 import { getModelRuntime, resolveModel } from "./model";
@@ -26,7 +26,7 @@ class AsyncEventQueue<T> {
 
   enqueue(e: T) {
     this.items.push(e);
-    this.waiters.shift()?.(this.items.shift()!);
+    this.waiters.shift()?.(this.items.shift());
   }
 
   /** 关闭队列：唤醒所有挂起的等待者，令其 dequeue 返回 undefined */
@@ -258,7 +258,11 @@ export class AiEngine {
       const queue = new AsyncEventQueue<AgentSessionEvent>();
       session.subscribe((e) => queue.enqueue(e));
       const runPromise = session.prompt(input, { source: "rpc" });
-      runPromise.finally(() => queue.close());
+      // 两个分支均关闭队列，避免 finally 返回未处理的拒绝 Promise。
+      void runPromise.then(
+        () => queue.close(),
+        () => queue.close(),
+      );
 
       // 主循环：消费事件直到 agent_end；队列耗尽且已关闭则终止
       let ended = false;

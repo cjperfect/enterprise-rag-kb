@@ -42,7 +42,7 @@ export function KnowledgeChat({ knowledgeBaseId, knowledgeBaseName }: KnowledgeC
     [knowledgeBaseId, knowledgeBaseName],
   );
 
-  const chatAdapter = useMemo(() => createKnowledgeChatAdapter(knowledgeBaseId, knowledgeBaseName), [knowledgeBaseId, knowledgeBaseName]);
+  const chatAdapter = useMemo(() => createKnowledgeChatAdapter(knowledgeBaseId), [knowledgeBaseId, knowledgeBaseName]);
 
   // 注册当前知识库到全局 registry，便于 knowledge_search 事件展示来源名称
   useEffect(() => {
@@ -51,10 +51,18 @@ export function KnowledgeChat({ knowledgeBaseId, knowledgeBaseName }: KnowledgeC
 
   const runtime = useRemoteThreadListRuntime({
     adapter: threadListAdapter,
-    runtimeHook: () => useLocalRuntime(chatAdapter),
+    runtimeHook: function useKnowledgeRuntime() {
+      return useLocalRuntime(chatAdapter);
+    },
   });
 
-  const Welcome = useMemo(() => () => <KnowledgeChatWelcome kbName={knowledgeBaseName} />, [knowledgeBaseName]);
+  const Welcome = useMemo(
+    () =>
+      function Welcome() {
+        return <KnowledgeChatWelcome kbName={knowledgeBaseName} />;
+      },
+    [knowledgeBaseName],
+  );
   const components = useMemo(() => ({ Welcome }), [Welcome]);
 
   return (

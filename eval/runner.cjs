@@ -46,8 +46,8 @@ function loadGolden() {
 
 // 4) 跑一组配置
 async function runOne(run, golden) {
-  // 每个 run 只算自己 k 的 Recall —— 它物理上就只检索了 top-k，
-  // 不存在"第 k+1 名"，横向合并 @3/@5/@8 会造成误导（hybrid-k3 显示 Recall@5）
+  // 每个 run 只算自己 k 的 HitRate —— 它物理上就只检索了 top-k，
+  // 不存在"第 k+1 名"，横向合并 @3/@5/@8 会造成误导（hybrid-k3 显示 HitRate@5）
   const ks = [run.k];
   const scored = [];
   for (const { items } of golden) {
@@ -55,6 +55,7 @@ async function runOne(run, golden) {
       const results = await ragService.search(item.query, {
         kbIds: config.kbIds,
         k: run.k,
+        mode: run.mode,
       });
       scored.push(scoreItem(item, results, ks));
     }
@@ -66,10 +67,7 @@ async function runOne(run, golden) {
 function renderReport(results, golden) {
   const today = new Date().toISOString().slice(0, 10);
   const totalQ = golden.reduce((s, g) => s + g.items.length, 0);
-  const advTotal = golden.reduce(
-    (s, g) => s + g.items.filter((i) => i.type === "adversarial").length,
-    0,
-  );
+  const advTotal = golden.reduce((s, g) => s + g.items.filter((i) => i.type === "adversarial").length, 0);
   const lines = [];
   lines.push(`# RAG 评测报告 ${today}`);
   lines.push("");
@@ -78,23 +76,23 @@ function renderReport(results, golden) {
   lines.push(`- 知识库：kbIds = ${JSON.stringify(config.kbIds)}`);
   lines.push("");
 
-  // 汇总表：每行只展示该配置自己 k 的 Recall
+  // 汇总表：每行只展示该配置自己 k 的 HitRate
   lines.push("## 汇总");
   lines.push("");
-  const header = ["配置", "Recall", "MRR", "nDCG", "命中数", "陷阱题防护"];
+  const header = ["配置", "HitRate", "MRR", "首个命中 DCG", "命中数", "陷阱题（仅统计召回）"];
   lines.push("| " + header.join(" | ") + " |");
   lines.push("| " + header.map(() => "---").join(" | ") + " |");
   for (const { run, scored, ks } of results) {
     const agg = aggregate(scored, ks);
-    const advPassed = scored.filter((s) => s.type === "adversarial" && s.hit).length;
+    const advRetrieved = scored.filter((s) => s.type === "adversarial" && s.retrievedCount > 0).length;
     const advCount = scored.filter((s) => s.type === "adversarial").length;
     const row = [
       `${run.name} (${run.mode})`,
-      `@${run.k} = ${agg[`recall@${run.k}`]}`,
+      `@${run.k} = ${agg[`hit@${run.k}`]}`,
       agg.mrr,
-      agg.ndcg,
+      agg.firstHitDcg,
       `${agg.hitCount}/${agg.questions}`,
-      advCount ? `${advPassed}/${advCount}` : "-",
+      advCount ? `${advRetrieved}/${advCount} 有召回` : "-",
     ];
     lines.push("| " + row.join(" | ") + " |");
   }
@@ -121,9 +119,9 @@ function renderReport(results, golden) {
   }
 
   // 幻觉防护：陷阱题单独看
-  lines.push("## 幻觉防护（陷阱题：文档里没有答案）");
+  lines.push("## 陷阱题召回统计（不判定幻觉）");
   lines.push("");
-  lines.push("正确表现 = 未召回同文档切片；被误导召回 = 幻觉，需关注。");
+  lines.push("相关文档被召回不代表产生幻觉；拒答正确性请运行生成层评测或人工审核最终回答。");
   lines.push("");
   for (const { run, scored } of results) {
     const advs = scored.filter((s) => s.type === "adversarial");
@@ -132,9 +130,7 @@ function renderReport(results, golden) {
       lines.push("- 无题");
     }
     for (const s of advs) {
-      lines.push(s.hit
-        ? `- ✅ 通过（未被误导）：${s.query}`
-        : `- 🚨 被误导召回：${s.query}`);
+      lines.push(`- [${s.id}] ${s.query}：召回 ${s.retrievedCount} 片，最终回答待评估`);
     }
     lines.push("");
   }
@@ -161,7 +157,7 @@ async function main() {
     console.log(`▶ 跑 ${run.name} (${run.mode}, k=${run.k}) ...`);
     const r = await runOne(run, golden);
     const agg = aggregate(r.scored, r.ks);
-    console.log(`  Recall@${run.k}=${agg[`recall@${run.k}`]} MRR=${agg.mrr} 命中 ${agg.hitCount}/${agg.questions}`);
+    console.log(`  HitRate@${run.k}=${agg[`hit@${run.k}`]} MRR=${agg.mrr} 命中 ${agg.hitCount}/${agg.questions}`);
     results.push(r);
   }
 
@@ -173,7 +169,15 @@ async function main() {
   console.log(`\n报告已写入: ${out}`);
 }
 
-main().catch((e) => {
+async function run() {
+  try {
+    await main();
+  } finally {
+    await ragService.close();
+  }
+}
+
+run().catch((e) => {
   console.error("评测失败:", e);
   process.exit(1);
 });

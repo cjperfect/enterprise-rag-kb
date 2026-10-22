@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  // 保留子路径入口，供 @langchain-rag/shared/interfaces 等按需引用
+  // 保留子路径入口，供 @enterprise-rag-kb/shared/interfaces 等按需引用
   entry: [
     "src/index.ts",
     "src/enums/index.ts",

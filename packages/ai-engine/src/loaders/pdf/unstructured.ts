@@ -22,19 +22,7 @@ const UNSTRUCTURED_TIMEOUT_MS = 120_000;
 const UNSTRUCTURED_POLL_INTERVAL_MS = 2_000;
 
 /** Unstructured 元素类型（常见子集） */
-export type UnstructuredElementType =
-  | "Title"
-  | "NarrativeText"
-  | "Table"
-  | "ListItem"
-  | "PageBreak"
-  | "Header"
-  | "Footer"
-  | "FigureCaption"
-  | "Figure"
-  | "Image"
-  | "UncategorizedText"
-  | string;
+export type UnstructuredElementType = string;
 
 export interface UnstructuredElement {
   element_id?: string;
@@ -78,10 +66,8 @@ interface TransformElement {
  * 失败时抛错（由调用方决定降级策略——默认回退 pdf-parse 原始文本，不让解析链路挂掉）。
  * SDK 为 ESM-only，这里用动态 import 以兼容本包的双构建（CJS + ESM）。
  */
-export async function parsePdfWithUnstructured(
-  pdfBuffer: Buffer,
-  _options: UnstructuredParseOptions = {},
-): Promise<UnstructuredElement[]> {
+export async function parsePdfWithUnstructured(pdfBuffer: Buffer, options: UnstructuredParseOptions = {}): Promise<UnstructuredElement[]> {
+  void options;
   const apiKey = process.env.UNSTRUCTURED_API_KEY;
   if (!apiKey) {
     throw new Error("缺少 Unstructured 云 API 配置：请设置环境变量 UNSTRUCTURED_API_KEY（apps/backend/.env）");
@@ -118,9 +104,7 @@ export async function parsePdfWithUnstructured(
       if (job.status !== "completed" || !job.result) {
         // job.error 可能是对象（如 { code: "could_not_parse", message: "..." }），
         // 直接模板拼接会输出 [object Object]，必须 JSON 序列化才可读
-        const jobError = job.error
-          ? `，错误：${typeof job.error === "string" ? job.error : JSON.stringify(job.error)}`
-          : "";
+        const jobError = job.error ? `，错误：${typeof job.error === "string" ? job.error : JSON.stringify(job.error)}` : "";
         throw new Error(`Unstructured 解析失败：job ${jobId} 最终状态 ${job.status}${jobError}`);
       }
       elements = job.result.elements ?? [];
@@ -143,9 +127,7 @@ export async function parsePdfWithUnstructured(
     } catch (err) {
       lastError = err;
       if (attempt < MAX_ATTEMPTS) {
-        console.warn(
-          `[unstructured] 第 ${attempt} 次解析未成功，${2 * attempt}s 后重试：${err instanceof Error ? err.message : String(err)}`,
-        );
+        console.warn(`[unstructured] 第 ${attempt} 次解析未成功，${2 * attempt}s 后重试：${err instanceof Error ? err.message : String(err)}`);
         await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
       }
     }
@@ -191,19 +173,26 @@ export function htmlTableToText(html: string): string {
     const cellRe = /<t([dh])[^>]*>([\s\S]*?)<\/t\1>/gi;
     let cellMatch: RegExpExecArray | null;
     while ((cellMatch = cellRe.exec(trMatch[1]))) {
-      cells.push(cellMatch[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim());
+      cells.push(
+        cellMatch[2]
+          .replace(/<[^>]+>/g, "")
+          .replace(/\s+/g, " ")
+          .trim(),
+      );
     }
     rows.push(cells);
   }
 
   // 兜底：没解析出结构时至少清掉标签，避免原始 HTML 混入正文
   if (rows.length === 0) {
-    return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return html
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   const colCount = Math.max(...rows.map((r) => r.length));
-  const fmt = (cells: string[]) =>
-    Array.from({ length: colCount }, (_, i) => cells[i] ?? "").join(" | ");
+  const fmt = (cells: string[]) => Array.from({ length: colCount }, (_, i) => cells[i] ?? "").join(" | ");
   const sep = Array.from({ length: colCount }, () => "---").join(" | ");
 
   const lines = rows.map(fmt);

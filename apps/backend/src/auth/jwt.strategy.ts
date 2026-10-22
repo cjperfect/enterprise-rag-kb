@@ -1,3 +1,4 @@
+import { AUTH_COOKIE, JWT_SECRET } from "./jwt.constants";
 import { Injectable } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
@@ -7,9 +8,18 @@ import { AuthService } from "./auth.service";
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly authService: AuthService) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        (req: { headers?: { cookie?: string } }) => {
+          const cookie = req.headers?.cookie
+            ?.split(";")
+            .map((s) => s.trim())
+            .find((s) => s.startsWith(`${AUTH_COOKIE}=`));
+          return cookie?.slice(AUTH_COOKIE.length + 1) ?? null;
+        },
+      ]),
       ignoreExpiration: false,
-      secretOrKey: process.env["JWT_SECRET"] ?? "dev-secret-change-me",
+      secretOrKey: JWT_SECRET,
     });
   }
 

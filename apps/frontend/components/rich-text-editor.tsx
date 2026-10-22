@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, type FC } from "react";
+import { useRef, useEffect, type FC } from "react";
 import { useEditor, EditorContent, type Extensions } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -47,7 +47,7 @@ const turndownService = new TurndownService({
 
 // <u> 保留为 HTML（Markdown 无对应语法）
 turndownService.addRule("underline", {
-  filter: (node) => node.nodeName === "U" || (node as HTMLElement).style?.textDecoration === "underline",
+  filter: (node) => node.nodeName === "U" || node.style?.textDecoration === "underline",
   replacement: (content) => `<u>${content}</u>`,
 });
 
@@ -67,7 +67,7 @@ turndownService.addRule("mark", {
 turndownService.addRule("taskList", {
   filter: (node) => node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem",
   replacement: (content, _node) => {
-    const checked = (_node as HTMLElement).getAttribute("data-checked") === "true";
+    const checked = _node.getAttribute("data-checked") === "true";
     return `- [${checked ? "x" : " "}] ${content}\n`;
   },
 });
@@ -183,20 +183,6 @@ export const RichTextEditor: FC<RichTextEditorProps> = ({
       editor.commands.setContent(`<p>${initialContent.replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`);
     }
   }, [editor, initialContent]);
-
-  // 获取当前 Markdown 内容
-  const getMarkdown = useCallback((): string => {
-    if (!editor) return "";
-    return htmlToMd(editor.getHTML());
-  }, [editor]);
-
-  // 暴露 getMarkdown 到 editorRef
-  useEffect(() => {
-    if (editor) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (editor as any).getMarkdown = getMarkdown;
-    }
-  }, [editor, getMarkdown]);
 
   // 工具栏按钮
   const toolbarButtons: ToolbarButton[] = editor

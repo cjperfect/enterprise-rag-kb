@@ -102,6 +102,9 @@ def render_report(result, meta) -> str:
         f"- embedding: ollama/{EMBED_MODEL}",
         f"- 题目数: {len(df)}（含 {sum(1 for m in meta if m['adversarial'])} 道陷阱题）",
         "",
+        "- 汇总仅包含正常题；陷阱题的召回与忠实度分数不能用于判断拒答。陷阱题最终回答需单独人工审核。",
+        "- 当前 reference 可能由关键词拼接，ContextRecall 仅作粗略诊断。",
+        "",
         "## 汇总指标",
         "",
         "| 指标 | 均值 | 说明 |",
@@ -115,8 +118,9 @@ def render_report(result, meta) -> str:
         "context_recall": "reference 中的信息有多少被检索到的 contexts 覆盖",
     }
     metric_cols = [c for c in df.columns if c not in ("user_input", "response", "retrieved_contexts", "reference")]
+    normal_mask = [not m["adversarial"] for m in meta]
     for col in metric_cols:
-        mean = df[col].mean()
+        mean = df.loc[normal_mask, col].mean()
         desc = metric_desc.get(col, "")
         lines.append(f"| {col} | {mean:.3f} | {desc} |")
 
@@ -134,6 +138,8 @@ def render_report(result, meta) -> str:
         q = str(row["user_input"]).replace("|", "∣")[:40]
 
         def fmt(col):
+            if m["adversarial"]:
+                return "N/A"
             v = row.get(col, float("nan"))
             try:
                 return f"{float(v):.2f}"
@@ -153,7 +159,7 @@ def render_report(result, meta) -> str:
         | (df.get("answer_relevancy", 1) < 0.5)
         | (df.get("context_precision", 1) < 0.5)
     )
-    low = df[low_mask]
+    low = df[low_mask & normal_mask]
     if len(low) == 0:
         lines.append("- 无")
     for i, row in low.iterrows():
@@ -167,6 +173,10 @@ def render_report(result, meta) -> str:
             lines.append(f"  - [{j+1}] {str(c)[:150]}")
         lines.append("")
 
+    lines += ["", "## 陷阱题最终回答（待人工审核是否拒答及是否含无依据断言）", ""]
+    for i, row in df.iterrows():
+        if meta[i]["adversarial"]:
+            lines.append(f"- [{meta[i]['id']}] {row['user_input']}：{row['response']}")
     return "\n".join(lines)
 
 

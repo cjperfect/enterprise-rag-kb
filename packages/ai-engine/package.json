@@ -1,5 +1,5 @@
 {
-  "name": "@langchain-rag/ai-engine",
+  "name": "@enterprise-rag-kb/ai-engine",
   "version": "0.1.0",
   "private": true,
   "description": "LangChain RAG engine for document retrieval and QA",
@@ -21,7 +21,7 @@
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-coding-agent": "1.1.0",
     "@elastic/elasticsearch": "^8.19.2",
-    "@langchain-rag/shared": "workspace:*",
+    "@enterprise-rag-kb/shared": "workspace:*",
     "@langchain/community": "^1.1.29",
     "@langchain/core": "^1.2.3",
     "@langchain/ollama": "^1.3.0",

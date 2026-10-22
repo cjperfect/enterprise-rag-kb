@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -9,25 +9,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { CreateDialogProps } from "@/interfaces/knowledge";
 
-export function CreateDialog({ open, onOpenChange, onSubmit, editingKb }: CreateDialogProps) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+export function CreateDialog(props: CreateDialogProps) {
+  return <CreateDialogForm key={`${props.open}:${props.editingKb?.id ?? "new"}`} {...props} />;
+}
+
+function CreateDialogForm({ open, onOpenChange, onSubmit, editingKb }: CreateDialogProps) {
+  const [name, setName] = useState(editingKb?.name ?? "");
+  const [description, setDescription] = useState(editingKb?.description ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const isEditing = !!editingKb;
-
-  // 编辑时回填表单
-  useEffect(() => {
-    if (editingKb) {
-      setName(editingKb.name);
-      setDescription(editingKb.description ?? "");
-    } else {
-      setName("");
-      setDescription("");
-    }
-    setError("");
-  }, [editingKb?.id, open]);
 
   const handleSubmit = async () => {
     const trimmed = name.trim();
@@ -97,7 +89,7 @@ export function CreateDialog({ open, onOpenChange, onSubmit, editingKb }: Create
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             取消
           </Button>
-          <Button onClick={handleSubmit} disabled={loading} className="gap-2 ml-2">
+          <Button onClick={() => void handleSubmit()} disabled={loading} className="gap-2 ml-2">
             {loading ? <Loader2 className="size-4 animate-spin" /> : null}
             {isEditing ? "保存" : "创建"}
           </Button>

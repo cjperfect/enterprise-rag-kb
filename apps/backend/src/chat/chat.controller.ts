@@ -1,14 +1,10 @@
 import { Controller, Body, Res, Post } from "@nestjs/common";
 import { ChatService } from "./chat.service";
 import type { ChatDto } from "./dto/chat.dto";
-// TODO: 临时跳过登录校验
-// import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { Response } from "express";
 
 @Controller("api")
-// TODO: 临时跳过登录校验
-// @UseGuards(JwtAuthGuard)
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
